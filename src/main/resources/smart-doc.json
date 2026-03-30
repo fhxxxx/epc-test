@@ -1,0 +1,10 @@
+{
+  "allInOne": true,
+  "outPath": "./src/main/resources/static/doc",
+  "responseBodyAdvice":{
+    "className":"com.envision.bunny.infrastructure.response.Echo"
+  },
+  "displayActualType":true,
+  "showAuthor": false,
+  "isStrict": false
+}

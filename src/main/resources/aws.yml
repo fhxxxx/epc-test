@@ -1,0 +1,77 @@
+spring:
+  cloud:
+    aws:
+      region:
+        auto: true  # 自动检测EC2实例所在区域
+      cloudformation:
+        stack-name: ${CLOUD_AWS_STACK_NAME:}
+      sqs:
+        enabled: false
+        queue-resolver:
+          strategy: BY_NAME  # 改为按名称查找，不自动创建
+      sns:
+        enabled: false
+      s3:
+        enabled: false
+# AWS通用配置
+aws:
+  common:
+    # 构建队列名称和URL的公共前缀
+    queue-name-prefix: jingtai-agent-ivocenter-bjdev01-sub-dev
+    queue-url-prefix: https://sqs.cn-north-1.amazonaws.com.cn/129823759297/${aws.common.queue-name-prefix}
+    sns-topic-arn-prefix: arn:aws-cn:sns:cn-north-1:129823759297:${aws.common.queue-name-prefix}
+
+  annotation:
+    sqs:
+      # 基础队列
+      basic-queue:
+        name: ${aws.common.queue-name-prefix}-BasicQueue
+        url: ${aws.common.queue-url-prefix}-BasicQueue
+      # Header 队列
+      header-queue:
+        name: ${aws.common.queue-name-prefix}-HeaderQueue
+        url: ${aws.common.queue-url-prefix}-HeaderQueue
+      # Headers 队列
+      headers-queue:
+        name: ${aws.common.queue-name-prefix}-HeadersQueue
+        url: ${aws.common.queue-url-prefix}-HeadersQueue
+      # 完整配置队列
+      full-config-queue:
+        name: ${aws.common.queue-name-prefix}-FullConfigQueue
+        url: ${aws.common.queue-url-prefix}-FullConfigQueue
+      # 批量队列
+      batch-queue:
+        name: ${aws.common.queue-name-prefix}-BatchQueue
+        url: ${aws.common.queue-url-prefix}-BatchQueue
+      # 包装队列
+      wrapped-queue:
+        name: ${aws.common.queue-name-prefix}-WrappedQueue
+        url: ${aws.common.queue-url-prefix}-WrappedQueue
+      # JSON 队列
+      json-queue:
+        name: ${aws.common.queue-name-prefix}-JsonQueue
+        url: ${aws.common.queue-url-prefix}-JsonQueue
+      # 广播队列
+      broadcast-one-queue:
+        name: ${aws.common.queue-name-prefix}-BroadcastOneQueue
+        url: ${aws.common.queue-url-prefix}-BroadcastOneQueue
+      broadcast-two-queue:
+        name: ${aws.common.queue-name-prefix}-BroadcastTwoQueue
+        url: ${aws.common.queue-url-prefix}-BroadcastTwoQueue
+      broadcast-three-queue:
+        name: ${aws.common.queue-name-prefix}-BroadcastThreeQueue
+        url: ${aws.common.queue-url-prefix}-BroadcastThreeQueue
+      # 重试队列
+      retry-queue:
+        name: ${aws.common.queue-name-prefix}-RetryQueue
+        url: ${aws.common.queue-url-prefix}-RetryQueue
+      # 死信队列
+      retry-queue-dlq:
+        name: ${aws.common.queue-name-prefix}-RetryQueueDLQ
+        url: ${aws.common.queue-url-prefix}-RetryQueueDLQ
+    sns:
+      topic:
+        arn: ${aws.common.sns-topic-arn-prefix}-BasicTopic
+    s3:
+      basic-bucket:
+        name: ai-video-dectective

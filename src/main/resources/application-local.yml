@@ -1,0 +1,43 @@
+server:
+  port: 8080
+  servlet:
+    context-path: / # 如果你部署在Thunder平台走流水线，建议配置 ${SERVER_CONTEXT_PATH}
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/moving?useSSL=false&useUnicode=true&characterEncoding=utf-8&rewriteBatchedStatements=true&allowMultiQueries=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: robert #your username
+    password: 123456 #your password
+  redis:
+    port: 6379 #your redis
+    host: 127.0.0.1 #your redis
+    ssl: false
+  # Spring Session 配置（核心：指定存储类型为 Redis）
+  session:
+    store-type: redis  # 强制 Session 存储到 Redis
+    timeout: 3600s     # Session 过期时间（1小时）
+custom:
+  login:
+    okta:
+      client-id: 0oa274u4ixclGMr3g0h8
+      client-secret: fuoe6FhwQYVeTY4hMePUgFMnxS0eDK-bq4aZuWrX6_SoQ80Bflfm1leM0QHOWLL6
+      authorization-endpoint: https://login-test.envision-sso.com/oauth2/default/v1/authorize
+      token-endpoint: https://login-test.envision-sso.com/oauth2/default/v1/token
+      userinfo-endpoint: https://login-test.envision-sso.com/oauth2/default/v1/userinfo
+      redirect-uri: http://localhost:8080/login/okta/auth
+  platform:
+    token:
+      app-id: 8EE12F20CB2B46978E97078D356D60E2
+      grant-type: CREDENTIAL
+#      app-secret: GQE%sj=kS0*ws5091P!w
+      app-secret: ^&#:Y40v8Q4JAV8G0!6?
+      domain: https://platform.envision-io.com
+      user-id: SYS10552
+      app-name: it-gdm
+  whitelist:
+    sms: 17051066161,18616805231
+    email: jingjing.dong@envision-energy.com
+    wecom: 59930
+  crypto:
+    secret-key: abcdefghijklmnopqrstuvwxyz1234567890
+tlog:
+  enable-invoke-time-print: true

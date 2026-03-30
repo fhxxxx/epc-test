@@ -1,0 +1,274 @@
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: loggers,health #开启loggers和health的暴漏
+  health: # 关闭下面的检查,尤其是mail的health检查会导致超时
+    mongo:
+      enabled: false
+    mail:
+      enabled: false
+    redis:
+      enabled: false
+    db:
+      enabled: false
+server:
+  port: 8088
+  servlet:
+    session:
+      timeout: PT2M # 可以是整数单位秒(60的整数)或者这种Duration方式，必须是完整的分钟 启用redis管理后，此配置失效
+    context-path: / # 如果你部署在Thunder平台走流水线，建议配置 ${SERVER_CONTEXT_PATH}
+    encoding:
+      charset: UTF-8 # 设定返回的response charset为utf-8
+      force: true # 返回的response中强制带上charset
+spring:
+  application:
+    name: bunny
+  servlet:
+    multipart:
+      max-file-size: 15MB  # 单个文件大小
+      max-request-size: 100MB # 单个上传请求中所有文件总大小的限制
+  datasource:
+    url: jdbc:mysql://localhost:3306/moving?useSSL=false&useUnicode=true&characterEncoding=utf-8&rewriteBatchedStatements=true&allowMultiQueries=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: robert #your username
+    password: 123456 #your password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    type: com.zaxxer.hikari.HikariDataSource
+    hikari:
+      connection-timeout: 30000
+      max-lifetime: 1800000 # 预防8小时问题
+      maximum-pool-size: 15 # minimum-idle 默认和此数据一致
+      idle-timeout: 180000 # 预防8小时问题
+      minimum-idle: 10
+      pool-name: Bunny Hikari
+      connection-test-query: SELECT 1
+  mvc:
+    static-path-pattern: download/**
+  resources:
+    static-locations: classpath:/static,classpath:/resources,classpath:/static/doc
+  redis:
+    port: 6379 #your redis
+    host: 127.0.0.1 #your redis
+    lettuce:
+      pool:
+        max-active: 8 # 连接池最大连接数（使用负值表示没有限制）
+        max-wait: -1 # 连接池最大阻塞等待时间（使用负值表示没有限制）
+        max-idle: 8 # 连接池最大空闲数
+        min-idle: 0 # 连接池最小空闲数
+    timeout: 10000  #redis 连接超时时间ms
+    database: 0 #默认连接数据库
+    ssl: false
+  cache:
+    type: redis # 指定缓存类型 redis
+    cache-names: template,menu #定义的cache names
+    redis:
+      key-prefix: cache- #指定前缀
+      time-to-live: 1d #过期时间
+      use-key-prefix: true #是否使用缓存
+    custom:
+      video: 3d
+      is_vdi: 1d
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss # 日期格式 前端传的是Date 后端可以接String或者LocalDateTime
+    property-naming-strategy: LOWER_CAMEL_CASE # 常用请求与响应自动转下划线
+    default-property-inclusion: non_null # 空值字段不传输
+    time-zone: Asia/Shanghai # 默认时区设置
+  mail:
+    host: smtp.office365.com
+    password: 1234567 #your password
+    port: 587
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+    username: email@envision-energy.com #your email
+  output:
+    ansi:
+      enabled: DETECT
+  flyway:
+    #是否启用
+    enabled: true
+    # 可以支持多个location, 用','隔开
+    locations: classpath:db/migration
+    #是否创建元数据表
+    validate-on-migrate: true
+    # flyway 的 clean 命令会删除指定 schema 下的所有 table, 生产务必禁掉。这个默认值是false
+    clean-disabled: true
+    # 如果数据库不是空表，需要设置成 true，否则启动报错
+    baseline-on-migrate: true
+    database-type: mysql
+    # 版本控制日志表，默认flyway_schema_history,不同系统建议修改数据
+    # table: flyway_schema_history
+    #按需引入aws配置
+  config:
+    import:
+      - classpath:aws.yml
+logging:
+  level:
+    root: info
+    com.x.module: debug
+mybatis-plus:
+  configuration:
+#    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # 将执行的sql打印出来，在开发或测试的时候可以用
+    mapUnderscoreToCamelCase: true #开启自动驼峰命名规则（camel case）映射 默认就是true
+    cache-enabled: true # 关闭二级缓存
+    local-cache-scope: STATEMENT # 关闭一级缓存 当分布式多实例，一级缓存 二级缓存都可能造成数据不一致性问题
+  global-config:
+    db-config:
+      idType: ASSIGN_ID #主键策略为了避免后续可能的安全问题，应禁止使用数据库自增ID，推荐使用雪花算法
+      workerId: ${random.int(1,255)} #机器 ID 部分(影响雪花ID)
+      logic-delete-field: is_deleted # 全局逻辑删除的实体字段名(since 3.3.0,配置后可以忽略不配置步骤2)
+      logic-delete-value: 1 # 逻辑已删除值(默认为 1)
+      logic-not-delete-value: 0 # 逻辑未删除值(默认为 0)
+custom:
+  login:
+    homepage:
+      pc: http://www.baidu.com
+      mobile: http://www.baidu.com
+    okta:
+      client-id: yourclientid
+      client-secret: yoursecret
+      authorization-endpoint: https://login-test.envision-sso.com/oauth2/default/v1/authorize
+      token-endpoint: https://login-test.envision-sso.com/oauth2/default/v1/token
+      userinfo-endpoint: https://login-test.envision-sso.com/oauth2/default/v1/userinfo
+      redirect-uri: http://localhost:8080/login/okta/auth
+      scope: openid
+    wecom:
+      app-id: wx67d6b0d5c9512363
+      agent-id: 1000115
+      client-secret: viVw_dH273J3E4gONexDI0ikiUHwCaL3TMGdvJugXgc
+      userinfo-endpoint: https://plt-envisioncn.c-dev-ty.envision-io.com/apis/it/wx/apis/auth/userinfo?code={code}&secret={secret}&corp=1
+      authorization-endpoint: https://open.weixin.qq.com/connect/oauth2/authorize
+      redirect-uri: http://localhost:8080/login/wecom/auth
+      scope: snsapi_userinfo
+    aad:
+      client-id: ff0d9b66-2979-4529-beb0-21cdf6ebf6b4
+      client-secret: NZS8Q~UiEx6.cf8hRcCELJEa1BfYMCKdk1XHzcV-
+      tenant-id: 20e8dfa9-4087-428e-865a-329bac3297da
+      authorization-endpoint: https://login.microsoftonline.com/${custom.login.aad.tenant-id}/oauth2/v2.0/authorize
+      token-endpoint: https://login.microsoftonline.com/${custom.login.aad.tenant-id}/oauth2/v2.0/token
+      userinfo-endpoint: https://graph.microsoft.com/oidc/userinfo
+      redirect-uri: http://localhost:8080/login/aad/auth
+      scope: openid profile email https://graph.microsoft.com/User.Read
+  platform:
+    token:
+      app-id: yourappid
+      grant-type: CREDENTIAL
+      app-secret: yoursecret
+      domain: https://platform-dev.envision-io.com
+      user-id: youruserid
+      app-name: yourapp
+  wecom:
+    agent-id: 1000115
+    client-secret: viVw_dH273J3E4gONexDI0ikiUHwCaL3TMGdvJugXgc
+    msg-endpoint: https://plt-envisioncn.c-dev-ty.envision-io.com/apis/it/wx/apis/msg/send
+    approval-endpoint: https://plt-envisioncn.c-dev-ty.envision-io.com/apis/it/server/approval/v1/service/approval
+    recall-endpoint: https://plt-envisioncn.c-dev-ty.envision-io.com/apis/it/wx/apis/msg/recall
+  whitelist:
+    sms: 17051066161,18616805231
+    email: jingjing.dong@envision-energy.com
+    wecom: 59930
+  azure:
+    blob:
+      endpoint: https://tblob01.blob.core.windows.net
+      account-name: tblob01
+      account-key: eahQLDDW/Yhn/NLx6N1L9TSIo087ymNw+hfxxV9QdlB3viIFtgwMH38l7rpASQBc0Xvu2qlc/piQ+AStcmf5+g==
+      container-name: finance-aiassitant-center-dev
+      stg-container-name: finance-aiassistant-stgctr-dev
+    layout:
+      submit-endpoint: https://t-fin-aiassistant.cognitiveservices.azure.com/documentintelligence/documentModels/prebuilt-layout:analyze?_overload=analyzeDocument&api-version=2024-11-30&outputContentFormat=markdown&pages=%s
+      query-endpoint: https://t-fin-aiassistant.cognitiveservices.azure.com/documentintelligence/documentModels/prebuilt-layout/analyzeResults/%s?api-version=2024-11-30
+      key: e0c12cecb2f34739bd325614fcee88fd
+  document:
+    policy:
+      test1: yourpolicyid1
+      test2: yourpolicyid2
+    service: it-platform-document
+    upload-url: https://platform-dev.envision-io.com/apis/it/platform/document/enp/upload
+    download-url: https://platform-dev.envision-io.com/apis/it/platform/document/enp/download/{docId}
+  sms:
+    endpoint: https://platform-dev.envision-io.com/apis/it/platform/sms/message
+  user:
+    cron-expression: 0 0 1 * * ?
+  alarm:
+    watcher: 59930
+  mybatis-plus-plugin:
+    tenant:
+      includes: customer
+      excludes: sys_user
+    data-change-recorder:
+      includes:
+      excludes: customer,operation_result
+    data-perm:
+      dept:    # 需要开启dept权限的表
+      menu:    # 需要开启menu权限的表
+  crypto:
+    secret-key: abcdefghijklmnopqrstuvwxyz1234567890
+  vdi-ips:
+    - 10.86.160.0/22
+    - 10.86.164.0/22
+    - 10.93.152.0/21
+    - 10.86.160.0/22
+    - 10.110.106.0/23
+    - 10.86.164.0/22
+    - 10.110.106.0/23
+    - 10.93.152.0/21
+    - 10.92.32.0/24
+    - 10.92.64.0/22
+    - 10.92.40.0/22
+    - 10.92.44.0/22
+    - 10.92.60.0/22
+    - 10.110.68.0/22
+    - 10.110.72.0/22
+    - 10.113.2.0/23
+    - 10.92.44.0/22
+    - 10.92.40.0/22
+    - 10.92.52.0/22
+    - 10.92.48.0/22
+    - 10.110.68.0/22
+    - 10.92.32.0/24
+    - 10.110.72.0/22
+    - 10.92.36.0/22
+    - 10.92.34.0/23
+    - 10.92.68.0/22
+    - 10.92.64.0/22
+    - 10.92.60.0/22
+    - 10.92.56.0/22
+    - 10.92.72.0/22
+    - 10.87.200.0/24
+    - 10.92.36.0/22
+    - 10.92.68.0/22
+    - 10.92.56.0/22
+    - 10.92.48.0/22
+    - 10.92.52.0/22
+    - 10.92.34.0/23
+    - 10.121.2.0/23
+    - 10.113.2.0/23
+    - 10.121.2.0/23
+  ip:
+    host: https://thunder-api.a-prod-bj.envision-io.com  # 请根据在thunder平台中部署的环境以及站点选择对应的host
+    path: /apis/it/thunder/utils/network/findByIP/%s
+easylog:
+  banner: false
+tlog:
+  enable-invoke-time-print: true #是否开启tlog日志打印请求参数与调用时间
+#---
+#spring:
+#  profiles: local # 声明文档块类型
+#custom:
+#  login:
+#    wecom:
+#      whitelist: 59930,20002541
+#---
+#spring:
+#  profiles: anonymous # 声明文档块类型
+#custom:
+#  login:
+#    wecom:
+#      whitelist: 59930,20002541
