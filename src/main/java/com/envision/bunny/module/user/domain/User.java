@@ -1,20 +1,18 @@
 package com.envision.bunny.module.user.domain;
 
 import cn.hutool.core.text.CharSequenceUtil;
-import com.alibaba.excel.annotation.ExcelProperty;
-import com.alibaba.excel.annotation.format.NumberFormat;
-import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.envision.bunny.infrastructure.mybatis.AuditingEntity;
-import com.envision.bunny.module.user.infrastructure.Constant;
+import com.envision.extract.infrastructure.mybatis.AuditingEntity;
+import com.envision.extract.module.user.infrastructure.Constant;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.github.promeg.pinyinhelper.Pinyin;
 import lombok.*;
 import org.springframework.security.core.AuthenticatedPrincipal;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
  * <p>
@@ -33,13 +31,7 @@ import java.io.Serializable;
 @ToString
 public class User extends AuditingEntity implements AuthenticatedPrincipal, Serializable {
     private static final long serialVersionUID = 1L;
-    /**
-     * ID
-     */
-    @ExcelProperty(value = "ID",index = 0)
-    @NumberFormat("#")
-    @TableId(value = "user_id", type = IdType.ASSIGN_ID)
-    protected Long userId;
+
     /**
      * 用户名
      *
@@ -47,13 +39,6 @@ public class User extends AuditingEntity implements AuthenticatedPrincipal, Seri
      */
     @TableField("username")
     private String username;
-    /**
-     * 显示名称
-     *
-     * @mock 董京京(jingjing.dong)
-     */
-    @TableField("display_name")
-    private String displayName;
     /**
      * 用户编号
      *
@@ -144,11 +129,10 @@ public class User extends AuditingEntity implements AuthenticatedPrincipal, Seri
         //2.构建SysUser对象
         User user = new User();
         if (inService) {
-            user.setDisplayName(username + "(" + account + ")");
+            user.setUsername(username + "(" + account + ")");
         } else {
-            user.setDisplayName(username + "(" + account +"-已离职)");
+            user.setUsername(username + "(" + account +"-已离职)");
         }
-        user.setUsername(username);
         user.setUserCode(userCode);
         user.setAccount(account);
         user.setAvatar(avatar);
@@ -159,6 +143,12 @@ public class User extends AuditingEntity implements AuthenticatedPrincipal, Seri
         user.setDivisionName(divisionName);
         user.setInService(inService);
         user.setLocale(locale);
+        user.setCreateTime(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
+        user.setUpdateTime(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
+        user.setCreateBy("cron task");
+        user.setUpdateBy("cron task");
+        user.setCreateByName("cron task");
+        user.setUpdateByName("cron task");
         return user;
     }
 

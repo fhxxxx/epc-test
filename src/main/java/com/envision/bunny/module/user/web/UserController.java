@@ -1,18 +1,21 @@
 package com.envision.bunny.module.user.web;
 
-import com.envision.bunny.infrastructure.util.HttpSessionUtils;
-import com.envision.bunny.module.user.application.UserCommandService;
-import com.envision.bunny.module.user.application.UserQueryService;
-import com.envision.bunny.module.user.domain.User;
+import com.envision.extract.infrastructure.mybatis.BasicPagination;
+import com.envision.extract.infrastructure.util.HttpSessionUtils;
+import com.envision.extract.module.user.application.UserCommandService;
+import com.envision.extract.module.user.application.UserKeywordQuery;
+import com.envision.extract.module.user.application.UserQueryService;
+import com.envision.extract.module.user.application.dto.UserDto;
+import com.envision.extract.module.user.domain.User;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.Resource;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 
-import static com.envision.bunny.infrastructure.security.SecurityUtils.CSRF_HEADER_NAME;
-import static com.envision.bunny.infrastructure.security.SecurityUtils.CSRF_SESSION_NAME;
+import static com.envision.extract.infrastructure.security.SecurityUtils.CSRF_HEADER_NAME;
+import static com.envision.extract.infrastructure.security.SecurityUtils.CSRF_SESSION_NAME;
 
 
 /**
@@ -43,7 +46,7 @@ public class UserController {
      * 当前登录用户
      * @return 用户信息
      */
-    @GetMapping("/current")
+    @GetMapping(value = "/current", produces = "application/json")
     public User getCurrentUserInfo(HttpServletResponse response) {
         final CsrfToken token = HttpSessionUtils.get(CSRF_SESSION_NAME);
         if (token != null) {
@@ -76,5 +79,15 @@ public class UserController {
     @GetMapping("/sync-all")
     public void syncAllFromDataLake(HttpServletResponse response) {
         userCommandService.syncAllUser();
+    }
+
+    /**
+     * 分页查询在职员工列表
+     * @param keywordQuery 查询参数
+     * @return 员工列表
+     */
+    @GetMapping("/list")
+    public BasicPagination<UserDto> queryUser(UserKeywordQuery keywordQuery){
+        return userQueryService.queryUser(keywordQuery);
     }
 }

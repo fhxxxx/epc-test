@@ -334,19 +334,21 @@ VatSpecialItemConfig (N)
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
 | id | BIGINT | 主键 | PK, AUTO_INCREMENT |
-| user_id | VARCHAR(100) | 用户ID（Okta userId） | NOT NULL, IDX |
+| user_id | VARCHAR(100) | 用户ID（Okta userId或工号） | NOT NULL, IDX |
 | user_name | VARCHAR(100) | 用户姓名 | NOT NULL |
+| employee_id | VARCHAR(50) | 工号 | NOT NULL, UNI |
 | permission_level | VARCHAR(20) | 权限级别 | NOT NULL |
 | company_code | VARCHAR(20) | 公司代码（SUPER_ADMIN为空） | IDX |
-| granted_by | VARCHAR(100) | 授权人 | |
+| granted_by | VARCHAR(100) | 授权人工号 | |
 | created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
 
 **permission_level 枚举值**：
-- `SUPER_ADMIN`：超级管理员，可访问所有公司、维护5张配置表
+- `SUPER_ADMIN`：超级管理员，可访问所有公司、维护5张配置表（配置在application.yml）
 - `COMPANY_ADMIN`：公司管理员，可管理该公司用户权限
 - `COMPANY_USER`：公司普通用户，可查看/操作该公司数据
 
 **约束**：
+- `(employee_id, company_code)` 联合唯一，同一用户对同一公司只有一条权限记录
 - `permission_level=SUPER_ADMIN` 时，`company_code` 必须为 NULL
 - `permission_level` 非 SUPER_ADMIN 时，`company_code` 不能为 NULL
 - `UNIQUE(user_id, company_code, permission_level)`
@@ -625,9 +627,10 @@ public enum AccountTypeEnum {
 | 分类 | Sheet页 | 数据依赖 | 说明 |
 |------|---------|---------|------|
 | **类型A：直取型** | BS表 | 当月上传的BS表 | 取1月至台账月的BS表，按月拼接 |
+| | 睿景月结数据表 | 用户上传睿景月结数据表 | **直接取用，无需计算** |
 | | PL表 | 当月上传的PL表 | 取1月至台账月的PL表，按月拼接 |
 | | BS附表-应交税费 | 当月上传的BS附表 | 同BS逻辑 |
-| | PL附表 | 当月上传的PL附表 | 同PL逻辑 |
+| | PL附表 | 当月上传的PL附表 | 2320/2355使用"PL附表-2320、2355"，其他公司使用"PL附表-项目公司" |
 | | 销项明细 | 数据湖DL_OUTPUT | 直接取当月数据 |
 | | 进项明细 | 数据湖DL_INPUT | 直接取当月数据 |
 | | 收入明细 | 数据湖DL_INCOME | 直接取当月数据 |
@@ -637,7 +640,9 @@ public enum AccountTypeEnum {
 | | 增值税销项 | 用户上传VAT_OUTPUT | 直接取当月数据 |
 | | 增值税进项认证清单 | 用户上传VAT_INPUT_CERT | 直接取当月数据 |
 | | 累计项目税收明细表 | 用户上传CUMULATIVE_PROJECT_TAX | 直接取当月数据 |
-| **类型B：计算型** | 增值税变动表 | 配置表+PL附表+增值税销项+增值税进项认证清单+收入明细+上月台账增值税变动表 | 需读取配置和上月台账 |
+| | 睿景月结数据表 | 用户上传PRE_BILLED | **直接取用，无需计算**（稍后补充模板） |
+| | 预开票收入计提冲回统计 | 用户上传PRE_BILLED | **直接取用，无需计算** |
+| **类型B：计算型** | 增值税变动表 | 配置表+PL附表+增值税销项+增值税进项认证清单+上月台账增值税变动表 | 需读取配置和上月台账 |
 | | Summary表 | 配置表+PL表+BS表+数据湖明细+印花税明细+增值税进项认证清单 | 需读取多个数据源 |
 | | Ref Summary表 | 同Summary+配置表 | 需读取配置表 |
 | **类型C：累积型** | 未开票数监控 | 上月台账未开票数监控+当月PL表+数据湖明细 | **必须依赖上月台账** |
@@ -646,7 +651,10 @@ public enum AccountTypeEnum {
 | | 累计税金汇总表 | 上月台账累计税金汇总表+当月Summary表 | **必须依赖上月台账** |
 | | 增值税表-累计销项 | 上月台账+当月数据湖明细 | **必须依赖上月台账** |
 | | 账税差异监控 | 上月台账+当月BS表+PL表 | **必须依赖上月台账** |
-| | 预开票收入计提冲回统计 | 上月台账+当月PL附表 | **必须依赖上月台账** |
+
+**重要说明**：
+- **系统不支持跨年数据处理**：1月份台账的期初数据（如留抵进项税）取0，不依赖上年度12月数据
+- **累积型Sheet页首次生成规则**：首次生成某公司台账时，累积型Sheet页的数据从0开始计算
 
 #### 5.3.2 Sheet页生成顺序
 
@@ -673,39 +681,90 @@ public enum AccountTypeEnum {
 
 这是整个系统中最复杂的Sheet页，涉及按公司类型区分不同逻辑：
 
-```
-输入：
-  - 公司代码 companyCode
-  - 当月 PL表/PL附表
-  - 当月 增值税销项表
-  - 当月 增值税进项认证清单
-  - 当月 收入明细（数据湖）
-  - 上月台账的增值税变动表
-  - 增值税变动表基础条目配置表
-  - 睿景景程增值税变动表特殊条目配置表
+#### 5.4.1 输入数据
 
+- 公司代码 companyCode
+- 当月 PL表/PL附表（根据公司代码选择不同的PL附表）
+- 当月 增值税销项表（用户上传）
+- 当月 增值税进项认证清单（用户上传）
+- 当月 收入明细（数据湖）
+- 上月台账的增值税变动表（用于期初留抵进项税）
+- 增值税变动表基础条目配置表
+- 睿景景程增值税变动表特殊条目配置表
+
+#### 5.4.2 公司类型判断与数据源选择
+
+```
 判断逻辑：
   IF companyCode IN (2320, 2355):
-    使用特殊条目配置表，按6种税率（专票13%/9%/6% + 普票13%/9%/6%）分别计算
-    当月开票金额 → 取增值税销项表按税率+发票类型匹配
-    合计金额 → 取PL附表按拆分依据匹配
+    // 睿景、景程公司
+    使用"睿景、景程增值税变动表特殊条目配置表"
+    PL附表使用"PL附表-2320、2355"（包含拆分依据列）
+    按6种税率分别计算：专票13%/9%/6% + 普票13%/9%/6%
   ELSE:
-    使用基础条目配置表
-    当月开票金额 → 取增值税销项表合计行
-    合计金额 → 取PL附表或PL表
+    // 其他公司
+    使用"增值税变动表基础条目配置表"
+    PL附表使用"PL附表-项目公司"（包含拆分依据列）
+    按基础条目配置表中的条目计算
   END IF
+```
 
-  期初留抵进项税 → 取上月台账增值税变动表期末留抵进项税合计
-    （1月份取上年度12月台账，如无则取0）
+#### 5.4.3 PL附表拆分依据匹配规则
 
-  期末留抵进项税 = 
-    IF (销项税 - (已认证进项税 + 期初留抵进项税 - 进项转出)) < 0
-    THEN ABS(差值)
-    ELSE 0
+**PL附表结构（以2320、2355为例）**：
 
-  应交增值税 =
-    IF 期末留抵进项税合计 > 0 THEN 0
-    ELSE 销项税额合计 + 销项税合计 + 进项转出合计 - 已认证进项税合计 - 期初留抵进项税合计
+| 拆分依据 | 未开票收入 | 销项 | 已开票收入 | 已开票销项 |
+|---------|-----------|------|-----------|-----------|
+| 专票-13% | 申报金额-未开票收入 | 申报税额-未开票销项 | 设备区域已开票收入合计 | 设备区域已开票税额合计 |
+| 专票-9% | 申报金额-未开票收入 | 申报税额-未开票销项 | 建安区域已开票收入合计 | 建安区域已开票税额合计 |
+| 专票-6% | 申报金额-未开票收入 | 申报税额-未开票销项 | 其他区域已开票收入合计 | 其他区域已开票税额合计 |
+| 普票-13% | ... | ... | ... | ... |
+| ... | ... | ... | ... | ... |
+| 利息收入 | ... | ... | ... | ... |
+
+**匹配规则**：
+
+增值税变动表的"拆分依据"列与PL附表的"拆分依据"列进行精确字符串匹配：
+- "专票-13%" 对应 PL附表中"拆分依据=专票-13%"的那一行
+- "利息收入" 对应 PL附表中"拆分依据=利息收入"的那一行
+
+取值逻辑：
+- **合计金额**：取PL附表中对应拆分依据行的"申报金额"列（未开票+已开票）
+- **未开票金额**：取PL附表中对应拆分依据行的"未开票收入"列
+- **当月开票金额**：取PL附表中对应拆分依据行的"已开票收入"列
+- **销项税**：取PL附表中对应拆分依据行的"销项"列（或"申报税额"列，根据列名判断）
+
+#### 5.4.4 增值税销项表匹配规则（仅2320、2355）
+
+增值税销项表需按"发票类型+税率"进行汇总：
+
+| 发票类型 | 税率 | 对应拆分依据 | 取值逻辑 |
+|---------|------|------------|---------|
+| 专用发票 | 13% | 专票-13% | 发票类型=专票且税率=13%的开票金额合计 |
+| 专用发票 | 9% | 专票-9% | 发票类型=专票且税率=9%的开票金额合计 |
+| 专用发票 | 6% | 专票-6% | 发票类型=专票且税率=6%的开票金额合计 |
+| 普通发票 | 13% | 普票-13% | 发票类型=普票且税率=13%的开票金额合计 |
+| 普通发票 | 9% | 普票-9% | 发票类型=普票且税率=9%的开票金额合计 |
+| 普通发票 | 6% | 普票-6% | 发票类型=普票且税率=6%的开票金额合计 |
+
+**注意**：非2320、2355公司，当月开票金额直接取增值税销项表的合计行（不按税率拆分）。
+
+#### 5.4.5 留抵进项税与应交增值税计算
+
+**注意**：系统不支持跨年数据处理，1月份台账不依赖上年度12月数据，期初留抵进项税取0。
+
+```
+期初留抵进项税 → 取上月台账增值税变动表期末留抵进项税合计
+  （1月份取0，不支持跨年数据）
+
+期末留抵进项税 =
+  IF (销项税 - (已认证进项税 + 期初留抵进项税 - 进项转出)) < 0
+  THEN ABS(差值)
+  ELSE 0
+
+应交增值税 =
+  IF 期末留抵进项税合计 > 0 THEN 0
+  ELSE 销项税额合计 + 销项税合计 + 进项转出合计 - 已认证进项税合计 - 期初留抵进项税合计
 ```
 
 ### 5.5 月份跳过与补零策略
@@ -1099,7 +1158,163 @@ tax-ledger/
 
 ---
 
-## 十、开发里程碑建议
+## 十、Excel格式规范与样式要求
+
+### 10.1 台账Excel总体要求
+
+**核心原则**：生成的台账Excel必须与现有Excel模板格式完全一致，包括：
+- Sheet页顺序、名称
+- 单元格合并、字体、颜色、边框
+- 数字格式、日期格式
+- 公式链接（如存在）
+
+### 10.2 各Sheet页格式规范
+
+#### 10.2.1 Sheet页顺序
+
+最终台账Excel应按以下顺序包含Sheet页：
+
+```
+1. 税务台账_{companyName}_{yearMonth}（主文件名）
+2. BS表
+3. PL表
+4. BS附表
+5. PL附表
+6. 印花税明细
+7. 增值税销项
+8. 增值税进项认证清单
+9. 累计项目税收明细表
+10. 收入明细
+11. 销项明细
+12. 进项明细
+13. 所得税明细
+14. 其他科目明细
+15. Summary表
+16. 增值税变动表
+17. 未开票数监控
+18. 项目累计申报
+19. 项目累计缴纳
+20. 累计税金汇总表
+21. 增值税表一 累计销项
+22. 账税差异监控
+23. 预开票收入计提冲回统计
+24. Ref Summary表
+```
+
+#### 10.2.2 格式样式标准
+
+| 样式项 | 要求 | 备注 |
+|--------|------|------|
+| 字体 | 微软雅黑或Arial | 保持与模板一致 |
+| 标题行 | 加粗、背景色（黄色/蓝色/绿色等） | 根据不同Sheet页的模板样式 |
+| 数字格式 | 保留2位小数 | 千分位分隔符根据模板确定 |
+| 日期格式 | yyyy-MM-dd | 或根据模板要求 |
+| 边框 | 细边框 | 所有数据单元格 |
+| 对齐 | 标题居中，数字右对齐 | 文本左对齐 |
+| 合并单元格 | 与模板完全一致 | 特别是表头部分 |
+
+#### 10.2.3 颜色编码规范
+
+根据Excel模板，常见的颜色用途：
+
+| 颜色 | 用途 | Sheet页 |
+|------|------|---------|
+| 浅黄色 | 表头、重点数据 | 多数Sheet页 |
+| 浅绿色 | 用户手工上传的数据 | 说明Sheet中标绿的部分 |
+| 浅蓝色 | 从数据湖拉取的数据 | 说明Sheet中标蓝的部分 |
+| 浅紫色 | 从上月台账导出的数据 | 说明Sheet中标紫的部分 |
+| 浅橙色 | 从配置表取数的数据 | 说明Sheet中标橙色的部分 |
+
+### 10.3 模板文件管理
+
+**模板文件存储位置**：
+- Azure Blob Storage: `tax-ledger/templates/`
+- 本地开发环境：`src/main/resources/templates/`
+
+**模板文件列表**：
+- `template_vat_change.xlsx` - 增值税变动表模板
+- `template_summary.xlsx` - Summary表模板
+- `template_bs.xlsx` - BS表模板
+- `template_pl.xlsx` - PL表模板
+- 等等...
+
+### 10.4 Excel公式处理策略
+
+**推荐方案:计算后值+部分公式(混合模式)**
+
+| 单元格类型 | 处理方式 | 理由 |
+|----------|---------|------|
+| **系统计算的字段**(如汇总行、差异列、留抵税计算等) | 填写计算结果值 | 系统计算的值更准确,避免公式错误 |
+| **用户可能修改的字段**(如备注、说明等) | 保留文本值,不使用公式 | 用户修改方便,不会破坏公式 |
+| **模板中的固定公式**(如=SUM(A2:A100)) | 尽量保留 | 用户可理解计算逻辑,便于后续调整 |
+| **动态引用公式**(如='其他Sheet'!A1) | 替换为计算后的值 | 避免引用丢失,跨Sheet引用维护困难 |
+
+**具体实现策略**:
+
+```java
+// 策略1:系统计算的值直接写入
+Cell amountCell = row.createCell(5);
+amountCell.setCellValue(totalAmount);  // 直接写入BigDecimal值
+amountCell.setCellStyle(currencyStyle);
+
+// 策略2:汇总类单元格保留简单公式
+Cell sumCell = row.createCell(10);
+sumCell.setCellFormula("SUM(E2:E" + (dataRowCount + 1) + ")");  // 保留公式
+sumCell.setCellStyle(sumStyle);
+
+// 策略3:从模板复制的单元格,保留原有公式
+Cell templateCell = templateRow.getCell(3);
+if (templateCell != null && templateCell.getCellType() == CellType.FORMULA) {
+    newCell.setCellFormula(templateCell.getCellFormula());  // 保留模板公式
+}
+```
+
+**优点**:
+- ✅ 系统计算准确,无公式错误风险
+- ✅ 关键汇总单元格有公式,用户可理解计算逻辑
+- ✅ 数据稳定,不会因单元格删除/插入导致公式失效
+- ✅ 兼容性好,不同Excel版本都能正常打开
+
+**缺点**:
+- ⚠️ 混合模式需要明确的编码规范
+- ⚠️ 修改后需要重新生成才能更新计算值
+
+### 10.5 Excel生成技术方案
+
+使用 **EasyExcel** 作为主要工具，**Apache POI** 作为辅助工具：
+
+**推荐方案**：
+```java
+// 1. 使用EasyExcel读取模板
+ExcelWriter excelWriter = EasyExcel.write(outputPath).withTemplate(templatePath).build();
+
+// 2. 使用EasyExcel填充数据（适用于简单表格）
+WriteSheet writeSheet = EasyExcel.writerSheet("Sheet名称").build();
+excelWriter.fill(data, writeSheet);
+
+// 3. 复杂样式处理使用POI
+// 对于复杂的合并单元格、样式、公式，使用Apache POI进行处理
+Workbook workbook = WorkbookFactory.create(templateFile);
+Sheet sheet = workbook.getSheet("Sheet名称");
+// 样式处理...
+workbook.write(new FileOutputStream(outputPath));
+```
+
+**样式处理策略**：
+- **方案A**（推荐）：从模板文件复制整行/整区域，只修改单元格值，保留模板样式
+- **方案B**：使用EasyExcel的`@ContentStyle`注解批量设置样式
+- **方案C**：复杂Sheet直接使用Apache POI处理
+
+### 10.5 公式处理
+
+**策略**：
+- 如果原始模板包含公式，生成的Excel应保留公式结构
+- 系统计算的数据优先填写计算结果值，而非公式
+- 需要动态计算的单元格使用公式，便于用户后续修改
+
+---
+
+## 十一、开发里程碑建议
 
 | 阶段 | 内容 | 预估工作量 |
 |------|------|-----------|
@@ -1119,7 +1334,362 @@ tax-ledger/
 | 序号 | 事项 | 状态 | 备注 |
 |------|------|------|------|
 | 1 | 前端技术栈确认 | 待确认 | 建议与现有脚手架一致 |
-| 2 | 增值税变动表附表的详细取值逻辑 | 待补充 | 需查看Excel中该Sheet的具体逻辑说明 |
-| 3 | 预开票收入计提冲回统计的详细逻辑 | 待补充 | 需查看Excel中该Sheet的具体逻辑说明 |
-| 4 | 1月份台账生成时上年度12月台账数据来源 | 待确认 | 是否需要支持跨年台账导入？ |
-| 5 | 台账Excel的具体格式/样式要求 | 待确认 | 是否需要与现有Excel模板完全一致？ |
+| 2 | 增值税变动表附表的详细取值逻辑 | ✅ 已确认 | 按PL附表的"拆分依据"列精确匹配，2320/2355按6种税率拆分，其他公司按基础条目计算 |
+| 3 | 预开票收入计提冲回统计的详细逻辑 | ✅ 已确认 | 用户上传的文件，系统直接取用，无需计算 |
+| 4 | 1月份台账生成时上年度12月台账数据来源 | ✅ 已确认 | 系统不支持跨年数据处理，1月份期初留抵进项税取0 |
+| 5 | 台账Excel的具体格式/样式要求 | ✅ 已确认 | 需要与现有Excel模板格式完全一致 |
+| 6 | 数据湖API的具体域名和认证方式 | ✅ 已确认 | 参考InvoiceCommandService实现，使用PlatformRemote，域名配置在application.yml |
+| 7 | 【睿景月结数据表】的数据来源 | ✅ 已确认 | 用户上传的文件，模板稍后补充 |
+| 8 | 增值税变动表中"异地预缴抵减"的取值逻辑 | 待确认 | 仅2320/2355有此字段，从哪取数？ |
+| 9 | 财务BP的权限级别 | ✅ 已确认 | 已简化为两级权限：超级管理员+公司使用者 |
+| 10 | 台账生成失败后的回滚策略 | 待确认 | 是否删除已生成的部分数据？ |
+| 11 | 台账导出时是否包含公式 | ✅ 已确认 | 采用混合模式：系统计算字段填值，汇总类单元格保留公式 |
+| 12 | 大量数据时的性能优化方案 | 待确认 | 数据量达到多少时需要特殊处理？ |
+| 13 | 睿景月结数据表的具体模板 | 待确认 | 用户表示稍后会补充模板文件 |
+
+---
+
+## 十二、下一步行动建议
+
+### 12.1 需要业务方澄清的问题
+
+**优先级P0（必须澄清才能开始开发）**：
+
+1. ~~**数据湖API接入信息**~~ ✅ 已确认
+   - 参考现有InvoiceCommandService实现即可
+   - API域名配置在application.yml的custom.platform.token.domain
+   - 使用PlatformRemote封装的接口，复用Okta认证
+
+2. ~~**【睿景月结数据表】来源**~~ ✅ 已确认
+   - 用户上传的文件
+   - 模板样式会稍后补充
+
+3. **"异地预缴抵减"取值来源**
+   - 增值税变动表中，2320/2355公司的"异地预缴抵减"从哪取数？
+   - **推测**：可能从"项目累计缴纳"表的"异地预缴"列汇总而来
+   - 需要确认：从哪个表？哪个字段？什么汇总逻辑？
+
+**优先级P1（开发过程中可以逐步明确）**：
+
+4. ~~**财务BP权限级别**~~ ✅ 已确认
+   - 已简化为两级权限模型
+   - 超级管理员配置在application.yml
+   - 公司使用者由超级管理员或公司管理员分配
+
+5. **台账生成失败的回滚策略**
+   - 部分Sheet生成失败，是否回滚已生成的Sheet？
+   - 还是记录错误状态，允许用户查看已生成的部分？
+
+6. ~~**Excel公式策略**~~ ✅ 已确认
+   - 采用混合模式：系统计算字段填值，汇总类单元格保留公式
+   - 具体策略见第10.4节
+
+7. **睿景月结数据表模板**
+   - 用户表示会稍后补充模板文件
+   - 需要明确该Sheet在台账中的取值逻辑
+
+**优先级P2（优化阶段考虑）**：
+
+7. **性能优化阈值**
+   - 单月数据湖数据量达到多少行时需要分页处理？
+   - 台账生成耗时超过多少秒需要异步处理？
+
+### 12.2 技术准备建议
+
+1. **环境准备**
+   - 准备Azure Blob Storage的连接字符串
+   - 配置MySQL数据库连接
+   - 准备Okta认证配置（复用现有实现）
+
+2. **模板文件整理**
+   - 将现有Excel模板按Sheet页拆分为独立模板文件
+   - 确认每个模板的格式要求
+   - 建立模板版本管理机制
+
+3. **测试数据准备**
+   - 准备至少2家公司的完整测试数据（包含2320/2355和其他公司）
+   - 准备至少3个月的连续数据（测试累积型Sheet页）
+   - 准备各种边界情况数据（1月、月份间断、缺失文件等）
+
+4. **数据湖API联调**
+   - 首先进行数据湖API联调测试
+   - 确认数据格式、分页逻辑、错误码
+   - 建立Mock数据用于开发环境测试
+
+### 12.3 开发顺序建议
+
+**第一阶段：基础设施与核心模块（P0）**
+1. 数据库建表与实体类生成
+2. Azure Blob Storage集成（复用现有BlobStorageRemote）
+3. Okta认证集成（复用现有实现）
+4. 简化权限模型实现（超级管理员+公司使用者）
+5. 公司管理CRUD
+1. 数据库建表与实体类生成
+2. Azure Blob Storage集成
+3. Okta认证集成（复用）
+4. 权限管理框架
+5. 公司管理CRUD
+
+**第二阶段：文件管理与数据湖集成（P1）**
+1. 文件上传/下载/列表接口
+2. 数据湖API调用封装（参考InvoiceCommandService）
+3. 科目拆分逻辑
+4. 数据湖文件Excel生成（使用EasyExcel）
+1. 文件上传/下载/列表接口
+2. 数据湖API调用封装
+3. 科目拆分逻辑
+4. 数据湖文件Excel生成
+
+**第三阶段：台账生成核心（P2）**
+1. 直取型Sheet页生成器（BS、PL、数据湖明细等）
+2. 配置表管理接口
+3. 增值税变动表生成器（最复杂）
+4. Summary表生成器
+
+**第四阶段：累积型Sheet与Ref（P3）**
+1. 累积型Sheet页生成器
+2. Ref Summary表生成器
+3. 台账组装器（合并所有Sheet）
+4. 台账生成前置校验
+
+**第五阶段：前端开发（P4）**
+1. 首页（公司列表）
+2. 公司详情页
+3. 文件上传/管理界面
+4. 数据湖拉取界面
+5. 台账生成与下载界面
+6. 配置管理界面（仅超级管理员）
+7. 权限管理界面（超级管理员和公司管理员）
+
+**第六阶段：测试与优化（P5）**
+1. 单元测试
+2. 集成测试
+3. 性能测试
+4. 异常处理完善
+5. 用户体验优化
+
+---
+
+## 附录A：关键业务规则速查
+
+### A.1 公司类型区分
+
+| 公司类型 | 配置表使用 | PL附表使用 | 增值税变动表逻辑 |
+|---------|----------|-----------|----------------|
+| 2320（上海睿景） | 特殊条目配置表 | PL附表-2320、2355 | 按6种税率拆分（专票13%/9%/6% + 普票13%/9%/6%） |
+| 2355（上海景程） | 特殊条目配置表 | PL附表-2320、2355 | 按6种税率拆分（专票13%/9%/6% + 普票13%/9%/6%） |
+| 其他公司（如3019） | 基础条目配置表 | PL附表-项目公司 | 按基础条目配置表计算 |
+
+### A.2 PL附表拆分依据示例（2320/2355）
+
+| 拆分依据 | 对应增值税销项表汇总条件 |
+|---------|----------------------|
+| 专票-13% | 发票类型=专用发票 且 税率=13% |
+| 专票-9% | 发票类型=专用发票 且 税率=9% |
+| 专票-6% | 发票类型=专用发票 且 税率=6% |
+| 普票-13% | 发票类型=普通发票 且 税率=13% |
+| 普票-9% | 发票类型=普通发票 且 税率=9% |
+| 普票-6% | 发票类型=普通发票 且 税率=6% |
+| 利息收入 | 固定资产处置收入（单独逻辑） |
+| 其他收益计税金额 | 其他收益（单独逻辑） |
+
+### A.3 累积型Sheet页首次生成规则
+
+| Sheet页 | 首次生成（无上月台账） | 后续生成 |
+|---------|---------------------|---------|
+| 未开票数监控 | 从0开始 | 上月数据 + 当月增量 |
+| 项目累计申报 | 从0开始 | 上月数据 + 当月增量 |
+| 项目累计缴纳 | 从0开始 | 上月数据（不变化） |
+| 累计税金汇总表 | 从0开始 | 上月数据 + 当月增量 |
+| 增值税表-累计销项 | 从0开始 | 上月数据 + 当月增量 |
+| 账税差异监控 | 从0开始 | 上月数据 + 当月BS/PL差异 |
+
+### A.4 前置文件依赖检查表
+
+| Sheet页 | 必需的输入文件 | 可选文件 |
+|---------|--------------|---------|
+| BS表 | BS表（用户上传） | BS附表 |
+| PL表 | PL表（用户上传） | PL附表 |
+| 增值税变动表 | PL附表、增值税销项表、增值税进项认证清单 | 上月台账 |
+| Summary表 | PL表、BS表、数据湖明细、印花税明细、增值税进项认证清单 | - |
+| 累积型Sheet | 上月台账、当月相应数据 | - |
+
+---
+
+## 附录B：技术实现速查
+
+### B.1 EasyExcel常用代码片段
+
+```java
+// 读取Excel
+List<Model> list = EasyExcel.read(file).head(Model.class).sheet().doReadSync();
+
+// 写入Excel
+EasyExcel.write(file, Model.class).sheet("Sheet名称").doWrite(data);
+
+// 基于模板填充
+ExcelWriter excelWriter = EasyExcel.write(file).withTemplate(template).build();
+excelWriter.fill(data, writeSheet);
+```
+
+### B.2 Apache POI公式处理示例
+
+```java
+// 创建单元格并设置公式
+Workbook workbook = WorkbookFactory.create(templateFile);
+Sheet sheet = workbook.getSheet("增值税变动表");
+Row row = sheet.getRow(10);
+Cell formulaCell = row.createCell(15);
+
+// 设置公式
+formulaCell.setCellFormula("SUM(E2:E100)");
+
+// 判断单元格类型并获取值
+if (cell.getCellType() == CellType.FORMULA) {
+    FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+    CellValue evaluated = evaluator.evaluate(cell);
+    double value = evaluated.getNumberValue();
+}
+
+// 复制单元格(包含公式)
+Cell sourceCell = sourceRow.getCell(5);
+Cell targetCell = targetRow.createCell(5);
+if (sourceCell.getCellType() == CellType.FORMULA) {
+    targetCell.setCellFormula(sourceCell.getCellFormula());
+} else if (sourceCell.getCellType() == CellType.NUMERIC) {
+    targetCell.setCellValue(sourceCell.getNumericCellValue());
+}
+```
+
+### B.3 Azure Blob Storage常用代码
+
+```java
+// 上传文件
+BlobClient blobClient = blobContainerClient.getBlobClient(blobPath);
+blobClient.upload(file.getInputStream, fileSize);
+
+// 下载文件
+BlobClient blobClient = blobContainerClient.getBlobClient(blobPath);
+InputStream inputStream = blobClient.openInputStream();
+
+// 列出文件
+ListBlobsOptions options = new ListBlobsOptions();
+options.setPrefix(prefix);
+blobContainerClient.listBlobs(options, Duration.ofSeconds(60));
+```
+
+### B.4 数据湖API调用示例（参考InvoiceCommandService）
+
+```java
+@Service
+@RequiredArgsConstructor
+public class DataLakeQueryService {
+    private final PlatformRemote platformRemote;
+
+    @Value("${custom.platform.token.domain}")
+    private String platformDomain;
+
+    /**
+     * 查询数据湖会计凭证数据
+     */
+    public List<AccountingDocumentDTO> queryAccountingDocuments(
+            String companyCode,
+            String fiscalYearPeriodStart,
+            String fiscalYearPeriodEnd
+    ) {
+        int offset = 0;
+        int limit = 5000;
+
+        String reqUrl = platformDomain + String.format(
+                "/api/finance/electronicArchives/%s/%s/%s/%d/%d",
+                companyCode, fiscalYearPeriodStart, fiscalYearPeriodEnd, offset, limit
+        );
+
+        return platformRemote.fetchFromDataLake(
+                "FINANCE_ELECTRONICARCHIVES_SVC",
+                reqUrl,
+                AccountingDocumentDTO::fromPltData
+        );
+    }
+
+    /**
+     * 分页查询大数据量
+     */
+    public List<AccountingDocumentDTO> queryWithPagination(
+            String companyCode,
+            String fiscalYearPeriodStart,
+            String fiscalYearPeriodEnd
+    ) {
+        List<AccountingDocumentDTO> allResults = new ArrayList<>();
+        int offset = 0;
+        int limit = 5000;
+
+        while (true) {
+            String reqUrl = platformDomain + String.format(
+                    "/api/finance/electronicArchives/%s/%s/%s/%d/%d",
+                    companyCode, fiscalYearPeriodStart, fiscalYearPeriodEnd, offset, limit
+            );
+
+            List<AccountingDocumentDTO> pageResults = platformRemote.fetchFromDataLake(
+                    "FINANCE_ELECTRONICARCHIVES_SVC",
+                    reqUrl,
+                    AccountingDocumentDTO::fromPltData
+            );
+
+            if (CollectionUtils.isEmpty(pageResults)) {
+                break;
+            }
+
+            allResults.addAll(pageResults);
+
+            if (pageResults.size() < limit) {
+                break;  // 最后一页
+            }
+
+            offset += limit;
+        }
+
+        return allResults;
+    }
+}
+```
+
+### B.5 权限校验拦截器示例
+
+```java
+@Component
+public class PermissionInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
+                             Object handler) throws Exception {
+        // 获取当前用户工号（从Okta JWT中提取）
+        String employeeId = SecurityContextHolder.getCurrentEmployeeId();
+
+        // 判断是否是超级管理员
+        if (isSuperAdmin(employeeId)) {
+            return true;  // 超级管理员放行
+        }
+
+        // 获取请求的公司代码
+        String companyCode = request.getParameter("companyCode");
+
+        // 校验用户是否有该公司权限
+        if (!hasCompanyPermission(employeeId, companyCode)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("无权限访问该公司数据");
+            return false;
+        }
+
+        return true;
+    }
+}
+```
+
+| 序号 | 事项 | 状态 | 备注 |
+|------|------|------|------|
+| 1 | 前端技术栈确认 | 待确认 | 建议与现有脚手架一致 |
+| 2 | 增值税变动表附表的详细取值逻辑 | ✅ 已确认 | 按PL附表的"拆分依据"列精确匹配，2320/2355按6种税率拆分，其他公司按基础条目计算 |
+| 3 | 预开票收入计提冲回统计的详细逻辑 | ✅ 已确认 | 用户上传的文件，系统直接取用，无需计算 |
+| 4 | 1月份台账生成时上年度12月台账数据来源 | ✅ 已确认 | 系统不支持跨年数据处理，1月份期初留抵进项税取0 |
+| 5 | 台账Excel的具体格式/样式要求 | ✅ 已确认 | 需要与现有Excel模板格式完全一致 |

@@ -11,5 +11,5 @@ import com.baomidou.mybatisplus.extension.service.IService;
  * @since 2024-05-09
  */
 public interface UserRepository extends IService<User> {
-
+    User getByUserCode(String userCode);
 }

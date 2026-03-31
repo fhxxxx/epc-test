@@ -1,7 +1,7 @@
 package com.envision.bunny.module.user.infrastructure;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.envision.bunny.module.user.domain.User;
+import com.envision.extract.module.user.domain.User;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

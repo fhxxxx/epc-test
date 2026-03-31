@@ -1,8 +1,8 @@
 package com.envision.bunny.module.user.infrastructure;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.envision.bunny.module.user.domain.User;
-import com.envision.bunny.module.user.domain.UserRepository;
+import com.envision.extract.module.user.domain.User;
+import com.envision.extract.module.user.domain.UserRepository;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,5 +15,10 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class UserRepositoryImpl extends ServiceImpl<UserMapper, User> implements UserRepository {
-
+    @Override
+    public User getByUserCode(String userCode) {
+        return this.lambdaQuery()
+                .eq(User::getUserCode, userCode)
+                .one();
+    }
 }

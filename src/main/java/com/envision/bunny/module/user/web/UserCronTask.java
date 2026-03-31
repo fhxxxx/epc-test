@@ -1,14 +1,14 @@
 package com.envision.bunny.module.user.web;
 
-import com.envision.bunny.facade.platform.PlatformRemote;
-import com.envision.bunny.module.user.application.UserCommandService;
+import com.envision.extract.facade.platform.PlatformRemote;
+import com.envision.extract.module.user.application.UserCommandService;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
+import javax.annotation.Resource;
 
 /**
  * @author yakun.meng

@@ -3,20 +3,20 @@ package com.envision.bunny.module.user.application;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.text.CharSequenceUtil;
-import com.envision.bunny.facade.platform.PlatformRemote;
-import com.envision.bunny.infrastructure.response.BizException;
-import com.envision.bunny.infrastructure.response.ErrorCode;
-import com.envision.bunny.infrastructure.security.SecurityUtils;
-import com.envision.bunny.infrastructure.web.domain.BaseCommandService;
-import com.envision.bunny.module.user.domain.User;
-import com.envision.bunny.module.user.domain.UserRepository;
-import com.envision.bunny.module.user.infrastructure.Constant;
+import com.envision.extract.facade.platform.PlatformRemote;
+import com.envision.extract.infrastructure.response.BizException;
+import com.envision.extract.infrastructure.response.ErrorCode;
+import com.envision.extract.infrastructure.security.SecurityUtils;
+import com.envision.extract.infrastructure.web.domain.BaseCommandService;
+import com.envision.extract.module.user.domain.User;
+import com.envision.extract.module.user.domain.UserRepository;
+import com.envision.extract.module.user.infrastructure.Constant;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
+import javax.annotation.Resource;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -42,7 +42,7 @@ public class UserCommandService extends BaseCommandService<UserRepository, User>
         }
         User currentUser = repository.getById(SecurityUtils.getCurrentUserId());
         currentUser.setLocale(locale);
-        repository.lambdaUpdate().eq(User::getUserId, currentUser.getUserId()).set(User::getLocale, locale).update();
+        repository.lambdaUpdate().eq(User::getId, currentUser.getId()).set(User::getLocale, locale).update();
         SecurityUtils.setChangedUser(currentUser);
     }
 
@@ -60,7 +60,7 @@ public class UserCommandService extends BaseCommandService<UserRepository, User>
         Map<String, User> dbUserMap = dbUsers.stream().collect(Collectors.toMap(User::getUserCode, Function.identity()));
         for (User remoteUser : remoteUsers) {
             User tempUser = dbUserMap.get(remoteUser.getUserCode());
-            remoteUser.setUserId(tempUser == null ? null : tempUser.getUserId());
+            remoteUser.setId(tempUser == null ? null : tempUser.getId());
             remoteUser.setLocale(tempUser == null ? "zh_CN" : tempUser.getLocale());
         }
         repository.saveOrUpdateBatch(remoteUsers);
