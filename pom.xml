@@ -30,10 +30,27 @@
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <spring-cloud-aws.version>3.2.1</spring-cloud-aws.version>
         <velocity.engine.version>2.3</velocity.engine.version>
+        <easyexcel.version>3.3.4</easyexcel.version>
     </properties>
 
     <dependencies>
-
+        <dependency>
+            <groupId>com.aspose</groupId>
+            <artifactId>aspose-words</artifactId>
+            <version>25.2</version>
+            <classifier>jdk17</classifier>
+        </dependency>
+        <dependency>
+            <groupId>com.envision</groupId>
+            <artifactId>aspose-pdf</artifactId>
+            <version>25.2</version>
+            <classifier>jdk17</classifier>
+        </dependency>
+        <dependency>
+            <groupId>com.aspose</groupId>
+            <artifactId>aspose-cells</artifactId>
+            <version>25.2</version>
+        </dependency>
         <!-- Web / Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -45,10 +62,22 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-storage-blob</artifactId>
+            <version>12.24.0</version>
+        </dependency>
+
         <!-- Validation (jakarta.validation) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>easyexcel</artifactId>
+            <version>${easyexcel.version}</version>
         </dependency>
 
         <!-- AOP -->

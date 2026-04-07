@@ -1,4 +1,4 @@
-# EPC进项税报表系统 - 详细设计文档
+﻿# EPC进项税报表系统 - 详细设计文档
 
 > 版本：v1.1  
 > 日期：2026-03-30  
@@ -30,7 +30,7 @@
 | 文件存储 | Azure Blob Storage（现成实现，本地仅存path） |
 | 认证 | Okta（现成实现） |
 | 前端 | 待定（Vue3/React均可，建议使用现有脚手架中的方案） |
-| Excel操作 | Apache POI + EasyExcel |
+| Excel操作 | Aspose.Cells |
 
 ### 1.4 业务规模
 
@@ -59,7 +59,7 @@
 │              Spring Boot 3.5.9 后端                       │
 │  ┌──────────┐  ┌──────────────┐  ┌─────────────────┐    │
 │  │Auth模块   │  │文件管理模块    │  │台账生成模块      │    │
-│  │(Okta)    │  │(上传/下载/    │  │(Excel生成/      │    │
+│  │(Okta)    │  │(上传/下载/    │  │(Aspose模板填充/公式重算/Excel生成/      │    │
 │  │          │  │ Blob存储)     │  │ 数据湖拉取)      │    │
 │  └──────────┘  └──────────────┘  └─────────────────┘    │
 │  ┌──────────┐  ┌──────────────┐  ┌─────────────────┐    │
@@ -82,7 +82,7 @@
 | `auth` | Okta认证、用户信息管理 | `AuthController`, `UserService` |
 | `company` | 公司CRUD、公司配置 | `CompanyController`, `CompanyService` |
 | `file` | 文件上传、下载、Azure Blob管理 | `FileController`, `FileService`, `BlobStorageService` |
-| `datalake` | 数据湖API调用、科目拆分、Excel生成 | `DataLakeController`, `DataLakeService`, `AccountSplitService` |
+| `datalake` | 数据湖API调用、科目拆分、Aspose模板填充/公式重算/Excel生成 | `DataLakeController`, `DataLakeService`, `AccountSplitService` |
 | `ledger` | 台账生成核心逻辑 | `LedgerController`, `LedgerService` |
 | `config` | 5张配置表的CRUD管理 | `ConfigController`, `ConfigService` |
 | `permission` | 权限管理（超管+公司级） | `PermissionController`, `PermissionService` |
@@ -241,6 +241,9 @@ VatSpecialItemConfig (N)
 | DL_INCOME_TAX | 所得税明细 | 数据湖 |
 | DL_OTHER | 其他科目明细 | 数据湖 |
 
+
+**唯一约束**：`UNIQUE(company_code, year_month, file_category, file_source)`，同键重复上传时覆盖旧记录（逻辑删除旧记录）。
+
 #### 3.2.3 台账记录表 `t_ledger_record`
 
 | 字段 | 类型 | 说明 | 约束 |
@@ -355,6 +358,66 @@ VatSpecialItemConfig (N)
 
 ---
 
+#### 3.2.10 台账运行实例表 `t_ledger_run`
+
+| 字段 | 类型 | 说明 | 约束 |
+|------|------|------|------|
+| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| ledger_id | BIGINT | 关联主记录ID（t_ledger_record.id） | NOT NULL, IDX |
+| run_no | INT | 同一ledger下的运行序号 | NOT NULL |
+| trigger_type | VARCHAR(20) | 触发类型（MANUAL/RETRY/RESUME） | NOT NULL |
+| mode_snapshot | VARCHAR(20) | 本次运行模式（AUTO/GATED） | NOT NULL |
+| status | VARCHAR(20) | 运行状态（PENDING/RUNNING/PAUSED/SUCCESS/FAILED/CANCELED/INVALIDATED） | NOT NULL, IDX |
+| current_batch | INT | 当前批次（1~4） | |
+| input_fingerprint | VARCHAR(128) | 输入文件与配置摘要哈希 | NOT NULL |
+| error_code | VARCHAR(100) | 失败错误码 | |
+| error_msg | VARCHAR(1000) | 失败错误信息 | |
+| started_at | DATETIME | 运行开始时间 | |
+| ended_at | DATETIME | 运行结束时间 | |
+| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+
+**约束建议**：`UNIQUE(ledger_id, run_no)`，同一ledger按运行序号递增。
+
+#### 3.2.11 台账运行阶段表 `t_ledger_run_stage`
+
+| 字段 | 类型 | 说明 | 约束 |
+|------|------|------|------|
+| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| run_id | BIGINT | 关联运行实例ID | NOT NULL, IDX |
+| batch_no | INT | 批次号（1~4） | NOT NULL |
+| status | VARCHAR(20) | 阶段状态（PENDING/RUNNING/SUCCESS/FAILED/CONFIRMED/SKIPPED/INVALIDATED） | NOT NULL, IDX |
+| sheet_count_total | INT | 该批应生成sheet数 | |
+| sheet_count_success | INT | 该批成功sheet数 | |
+| depends_on | VARCHAR(100) | 依赖批次描述（如1,2） | |
+| error_msg | VARCHAR(1000) | 阶段失败信息 | |
+| confirm_user | VARCHAR(100) | 人工确认人（GATED模式） | |
+| confirm_time | DATETIME | 人工确认时间 | |
+| started_at | DATETIME | 阶段开始时间 | |
+| ended_at | DATETIME | 阶段结束时间 | |
+| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+
+**约束建议**：`UNIQUE(run_id, batch_no)`。
+
+#### 3.2.12 台账运行产物表 `t_ledger_run_artifact`
+
+| 字段 | 类型 | 说明 | 约束 |
+|------|------|------|------|
+| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| run_id | BIGINT | 关联运行实例ID | NOT NULL, IDX |
+| batch_no | INT | 产物所属批次（1~4，最终文件可记为4） | NOT NULL |
+| artifact_type | VARCHAR(20) | 产物类型（INTERMEDIATE/FINAL/DEBUG） | NOT NULL |
+| file_name | VARCHAR(300) | 文件名 | NOT NULL |
+| blob_path | VARCHAR(500) | Blob路径 | NOT NULL |
+| file_size | BIGINT | 文件大小（字节） | |
+| checksum | VARCHAR(128) | 文件校验值（建议SHA-256） | |
+| is_latest | TINYINT | 是否该批最新快照 | DEFAULT 1 |
+| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+
+**快照保留策略**：中间快照与最终快照永久保留（不做TTL清理）。
+
+**说明**：`t_ledger_record` 作为“主记录（ledger）”，仍保持 `UNIQUE(company_code, year_month)`；`t_ledger_run*` 用于记录每次运行、分批状态和快照。
 ## 四、API接口设计
 
 ### 4.1 接口规范
@@ -501,6 +564,31 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
 
 ---
 
+#### 4.2.8 台账运行控制模块
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| POST | `/companies/{companyCode}/months/{yearMonth}/runs` | 创建一次台账运行（可指定AUTO/GATED） | 该公司权限用户 |
+| GET | `/companies/{companyCode}/months/{yearMonth}/runs/latest` | 查询最新有效运行及阶段状态 | 该公司权限用户 |
+| GET | `/ledger-runs/{runId}` | 查询运行详情（阶段、错误、快照） | 该公司权限用户 |
+| POST | `/ledger-runs/{runId}/confirm` | 人工确认当前批次并推进下一批（仅GATED） | 该公司权限用户 |
+| POST | `/ledger-runs/{runId}/retry` | 从指定批次重试（默认失败批次） | 该公司权限用户 |
+| GET | `/ledger-runs/{runId}/artifacts` | 查询并下载各批次快照 | 该公司权限用户 |
+
+**创建运行请求示例**：
+```json
+{
+  "mode": "AUTO",
+  "startBatch": 1,
+  "idempotencyKey": "20260403-2320-2026-01-run-001"
+}
+```
+
+**运行控制规则**：
+- 默认 `mode=AUTO`；可选 `mode=GATED`。
+- 闸门粒度按“批次”控制，不按单个sheet。
+- 输入文件或配置变更后，强制创建新run，不复用旧run。
+- 对外查询仅展示“最新有效run”。
 ## 五、核心业务逻辑设计
 
 ### 5.1 数据湖拉取与拆分
@@ -608,7 +696,7 @@ public enum AccountTypeEnum {
          └─────────────────┼─────────────────┘
                            │
               ┌────────────┴────────────┐
-              │ Step 5: 组装台账Excel    │
+              │ Step 5: Aspose组装台账Excel    │
               │ - 合并所有Sheet页         │
               │ - 设置格式/样式           │
               └────────────┬────────────┘
@@ -620,6 +708,80 @@ public enum AccountTypeEnum {
               └─────────────────────────┘
 ```
 
+#### 5.2.1 运行模式
+
+- 默认模式：`AUTO`（系统连续执行BATCH1~BATCH4，直至成功或失败）。
+- 可选模式：`GATED`（每批成功后暂停，用户确认后再进入下一批）。
+- 闸门粒度：按批次，不按单个sheet。
+
+#### 5.2.2 分批执行与Sheet映射（以V2.0“说明”sheet为唯一来源）
+
+**公司类型差异**：
+- `2320/2355`：包含专属sheet（累计税金汇总表、累计项目税收明细表、增值税表一-累计销项、账税差异监控、预开票收入计提冲回统计、PL附表-2320、2355）。
+- 其他公司：不生成上述2320/2355专属sheet；PL附表走“项目公司口径”（可由上传文件或规则生成）。
+
+**BATCH1（无依赖，可并行）**
+- 全公司：BS表、PL表、收入明细、销项明细、进项明细、所得税明细、增值税销项表、增值税进项认证清单。
+- 2320/2355：额外包含 累计项目税收明细表、PL附表-2320、2355。
+- 其他公司：PL附表-项目公司（若配置/输入要求）。
+
+**BATCH2（依赖BATCH1 + 配置 + 上月留抵）**
+- 全公司：增值税变动表（含附表）、Summary表。
+
+**BATCH3（依赖前两批 + 上月台账）**
+- 全公司：未开票数监控、项目累计申报、项目累计缴纳。
+- 2320/2355：额外包含 累计税金汇总表、增值税表一-累计销项、账税差异监控、预开票收入计提冲回统计。
+
+**BATCH4（依赖前几批）**
+- 全公司：Ref Summary表。
+
+**仅取数、不在最终台账展示的sheet（来自说明sheet备注）**
+- 睿景景程月结数据表-报税（用于PL附表取数）。
+- 合同印花税明细台账（用于取数）。
+- 其他科目明细（仅用于取数，不在最终台账中显示；该口径已确认）。
+#### 5.2.3 输入变更与失效策略
+
+- 若运行过程中或运行完成后发生输入文件/关键配置变更：
+1. 强制创建新run；
+2. 旧run标记为 `INVALIDATED`（或其受影响阶段标记为INVALIDATED）；
+3. 不复用旧run结果继续执行。
+
+#### 5.2.4 状态机转移矩阵
+
+**run状态转移**
+
+| 当前状态 | 触发事件 | 下一状态 | 说明 |
+|---|---|---|---|
+| PENDING | 开始执行 | RUNNING | 创建run后进入执行 |
+| RUNNING | 当前批成功（AUTO且非最后批） | RUNNING | 自动推进下一批 |
+| RUNNING | 当前批成功（GATED且非最后批） | PAUSED | 等待用户确认 |
+| PAUSED | 用户确认当前批 | RUNNING | 进入下一批 |
+| RUNNING | 最后一批成功 | SUCCESS | 生成FINAL快照并回写主记录 |
+| RUNNING | 任一批失败 | FAILED | 记录error_code/error_msg |
+| FAILED | 用户重试 | CANCELED/INVALIDATED + 新run(RUNNING) | 推荐新建run承载重试 |
+| RUNNING/PAUSED/SUCCESS/FAILED | 输入变更 | INVALIDATED | 旧run失效，不可继续 |
+| RUNNING/PAUSED | 用户取消 | CANCELED | 主动终止 |
+
+**stage状态转移**
+
+| 当前状态 | 触发事件 | 下一状态 | 说明 |
+|---|---|---|---|
+| PENDING | 开始该批 | RUNNING | |
+| RUNNING | 该批全部sheet成功 | SUCCESS | |
+| RUNNING | 该批任一sheet失败 | FAILED | 记录失败原因 |
+| SUCCESS | 用户确认（仅GATED） | CONFIRMED | AUTO模式可不落该态 |
+| FAILED | 从该批重试 | INVALIDATED + 新run的PENDING | 推荐新run重试 |
+| PENDING/RUNNING/SUCCESS/FAILED | 输入变更 | INVALIDATED | 旧阶段结果失效 |
+| PENDING | 依赖不满足/策略跳过 | SKIPPED | 预留 |
+
+**前端交互约束**
+- 失败节点支持hover显示失败原因（error_code + error_msg）。
+- 失败后允许“从该批重试”或“从指定批次重跑”，禁止跳过依赖批次。
+#### 5.2.5 快照策略
+
+- 每批成功后生成 `INTERMEDIATE` 快照，可下载核对。
+- 最后一批成功后生成 `FINAL` 快照并回写主记录。
+- 快照永久保留，不做TTL清理。
 ### 5.3 台账Sheet页生成优先级与依赖关系
 
 #### 5.3.1 Sheet页分类
@@ -635,7 +797,7 @@ public enum AccountTypeEnum {
 | | 进项明细 | 数据湖DL_INPUT | 直接取当月数据 |
 | | 收入明细 | 数据湖DL_INCOME | 直接取当月数据 |
 | | 所得税明细 | 数据湖DL_INCOME_TAX | 直接取当月数据 |
-| | 其他科目明细 | 数据湖DL_OTHER | 直接取当月数据 |
+| | 其他科目明细（仅取数，不展示） | 数据湖DL_OTHER | 直接取当月数据 |
 | | 印花税明细 | 用户上传STAMP_TAX | 直接取当月数据 |
 | | 增值税销项 | 用户上传VAT_OUTPUT | 直接取当月数据 |
 | | 增值税进项认证清单 | 用户上传VAT_INPUT_CERT | 直接取当月数据 |
@@ -661,7 +823,7 @@ public enum AccountTypeEnum {
 ```
 第一批（无依赖，可并行生成）：
   BS表、PL表、BS附表、PL附表
-  销项明细、进项明细、收入明细、所得税明细、其他科目明细
+  销项明细、进项明细、收入明细、所得税明细、其他科目明细（仅取数，不展示）
   印花税明细、增值税销项、增值税进项认证清单、累计项目税收明细表
 
 第二批（依赖第一批数据 + 配置表）：
@@ -749,6 +911,12 @@ public enum AccountTypeEnum {
 
 **注意**：非2320、2355公司，当月开票金额直接取增值税销项表的合计行（不按税率拆分）。
 
+#### 5.4.6 异地预缴抵减取值规则（仅2320、2355）
+
+- 适用范围：公司编码 `2320`、`2355`。
+- 规则来源：`税务台账生成逻辑_V2.0.xlsx`（`增值税变动表基础条目配置表` + `累计税金汇总表-2320、2355`）。
+- 取值口径：取“台账期”【增值税变动表】中条目=`异地预缴抵减` 的“合计”字段值。
+- 实现约束：该项已确认，按固定规则实现，不作为可配置待确认项。
 #### 5.4.5 留抵进项税与应交增值税计算
 
 **注意**：系统不支持跨年数据处理，1月份台账不依赖上年度12月数据，期初留抵进项税取0。
@@ -926,7 +1094,7 @@ public enum AccountTypeEnum {
 │  □ 销项明细                    │
 │  □ 进项明细                    │
 │  □ 所得税明细                  │
-│  □ 其他科目明细                │
+│  其他科目明细（仅取数，不展示）                │
 │                              │
 │        [取消]    [开始拉取]    │
 └──────────────────────────────┘
@@ -960,6 +1128,14 @@ public enum AccountTypeEnum {
 └──────────────────────────────────┘
 ```
 
+### 6.6.1 分批生成与人工闸门交互
+
+- 在“生成台账弹窗”增加运行模式切换：`AUTO`（默认）/`GATED`。
+- 展示四批阶段时间线：每批状态、开始/结束时间、失败信息、快照下载入口。
+- GATED模式下：每批成功后显示“确认进入下一批”按钮。
+- 提供“从失败批次重试”与“从指定批次重跑”操作。
+- 若检测到输入变更，提示“当前run已失效，需新建run”。
+- 列表页与详情页仅展示最新有效run，同时提供历史run入口（只读审计）。
 ### 6.7 配置管理页（仅SUPER_ADMIN）
 
 ```
@@ -1143,6 +1319,17 @@ tax-ledger/
 | 同一月份重复生成台账 | 覆盖旧台账（逻辑删除旧记录） |
 | 数据湖拉取与上传文件冲突 | 同一类别优先使用用户上传的文件 |
 
+### 9.1.1 分批生成异常处理策略
+
+| 场景 | 处理策略 |
+|------|---------|
+| 某批sheet生成失败 | 当前stage置FAILED，run置FAILED，保留前序批次快照 |
+| GATED模式下用户长期未确认 | run保持PAUSED，不自动超时推进 |
+| 同公司同月份重复触发生成 | 并发互斥；若输入变更则新建run，旧run置INVALIDATED |
+| 上传新文件后继续旧run | 禁止继续；必须新建run |
+| 中间快照上传失败 | 当前stage置FAILED，run置FAILED，记录错误并可重试 |
+
+**回滚说明**：采用“逻辑回滚”，不物理删除历史快照；对外仅暴露最新有效run。
 ### 9.2 台账生成完整性校验
 
 生成完成后进行后置校验：
@@ -1152,8 +1339,10 @@ tax-ledger/
 2. 检查是否有#REF!、#DIV/0!等公式错误
 3. 检查累积型Sheet页的数据是否与上月衔接
 4. 检查增值税变动表的应交增值税计算是否正确
-5. 校验通过 → 状态设为SUCCESS
-   校验失败 → 状态设为FAILED，记录错误信息
+5. 使用Aspose执行公式重算后检查是否存在#REF!/#DIV/0!等错误
+6. 检查关键模板区域（样式/合并单元格）未被破坏
+7. 校验通过 → 状态设为SUCCESS
+   校验失败 → 状态设为FAILED，记录错误信息（含sheet、cell、errorCode）
 ```
 
 ---
@@ -1188,7 +1377,7 @@ tax-ledger/
 11. 销项明细
 12. 进项明细
 13. 所得税明细
-14. 其他科目明细
+14. 其他科目明细（仅取数，不在最终台账展示）
 15. Summary表
 16. 增值税变动表
 17. 未开票数监控
@@ -1238,6 +1427,10 @@ tax-ledger/
 - `template_pl.xlsx` - PL表模板
 - 等等...
 
+**模板版本治理要求**：
+- 模板元数据：`template_code`、`template_version`、`checksum(SHA-256)`、`effective_from`
+- 运行时落库：每次`ledger_run`记录`template_version`与`template_checksum`，用于审计追溯
+- 生效规则：同一`template_code`仅允许一个生效版本；新版本发布后仅影响新建run
 ### 10.4 Excel公式处理策略
 
 **推荐方案:计算后值+部分公式(混合模式)**
@@ -1252,21 +1445,26 @@ tax-ledger/
 **具体实现策略**:
 
 ```java
-// 策略1:系统计算的值直接写入
-Cell amountCell = row.createCell(5);
-amountCell.setCellValue(totalAmount);  // 直接写入BigDecimal值
-amountCell.setCellStyle(currencyStyle);
+// 策略1：系统计算值直接写入（Aspose）
+Workbook wb = new Workbook(templatePath);
+Worksheet ws = wb.getWorksheets().get("增值税变动表");
+Cells cells = ws.getCells();
 
-// 策略2:汇总类单元格保留简单公式
-Cell sumCell = row.createCell(10);
-sumCell.setCellFormula("SUM(E2:E" + (dataRowCount + 1) + ")");  // 保留公式
-sumCell.setCellStyle(sumStyle);
+// F列写入系统计算结果
+cells.get(targetRow, 5).putValue(totalAmount.doubleValue());
 
-// 策略3:从模板复制的单元格,保留原有公式
-Cell templateCell = templateRow.getCell(3);
-if (templateCell != null && templateCell.getCellType() == CellType.FORMULA) {
-    newCell.setCellFormula(templateCell.getCellFormula());  // 保留模板公式
+// 策略2：汇总类单元格保留简单公式（Aspose）
+cells.get(sumRow, 10).setFormula("=SUM(E2:E" + (dataRowCount + 1) + ")");
+
+// 策略3：模板公式复制到目标单元格（Aspose）
+Cell templateCell = cells.get(templateRow, 3);
+Cell newCell = cells.get(newRow, 3);
+if (templateCell.getType() == CellValueType.IS_FORMULA) {
+    newCell.setFormula(templateCell.getFormula());
 }
+
+// 按需重算
+wb.calculateFormula();
 ```
 
 **优点**:
@@ -1279,33 +1477,37 @@ if (templateCell != null && templateCell.getCellType() == CellType.FORMULA) {
 - ⚠️ 混合模式需要明确的编码规范
 - ⚠️ 修改后需要重新生成才能更新计算值
 
-### 10.5 Excel生成技术方案
+### 10.5 Aspose模板填充/公式重算/Excel生成技术方案
 
-使用 **EasyExcel** 作为主要工具，**Apache POI** 作为辅助工具：
+使用 **Aspose.Cells** 作为本项目Excel生成的唯一实现方式：
 
 **推荐方案**：
 ```java
-// 1. 使用EasyExcel读取模板
-ExcelWriter excelWriter = EasyExcel.write(outputPath).withTemplate(templatePath).build();
+// 1) 加载模板
+Workbook workbook = new Workbook(templatePath);
+Worksheet sheet = workbook.getWorksheets().get("Sheet名称");
+Cells cells = sheet.getCells();
 
-// 2. 使用EasyExcel填充数据（适用于简单表格）
-WriteSheet writeSheet = EasyExcel.writerSheet("Sheet名称").build();
-excelWriter.fill(data, writeSheet);
+// 2) 按定位写入数据（示例：从第6行开始）
+int startRow = 5;
+for (int i = 0; i < rows.size(); i++) {
+    cells.get(startRow + i, 0).putValue(rows.get(i).getName());
+    cells.get(startRow + i, 1).putValue(rows.get(i).getAmount().doubleValue());
+}
 
-// 3. 复杂样式处理使用POI
-// 对于复杂的合并单元格、样式、公式，使用Apache POI进行处理
-Workbook workbook = WorkbookFactory.create(templateFile);
-Sheet sheet = workbook.getSheet("Sheet名称");
-// 样式处理...
-workbook.write(new FileOutputStream(outputPath));
+// 3) 公式重算（按需）
+workbook.calculateFormula();
+
+// 4) 导出阶段快照 / 最终台账
+workbook.save(outputPath);
 ```
 
-**样式处理策略**：
-- **方案A**（推荐）：从模板文件复制整行/整区域，只修改单元格值，保留模板样式
-- **方案B**：使用EasyExcel的`@ContentStyle`注解批量设置样式
-- **方案C**：复杂Sheet直接使用Apache POI处理
+**样式与结构保障策略**：
+- 以模板为唯一样式来源，运行时仅填充值，不在代码中重建样式
+- 合并单元格、边框、条件格式按模板保留；新增数据行仅做必要样式复制
+- 跨Sheet引用优先保留模板公式；不稳定动态引用可回填计算值
 
-### 10.5 公式处理
+### 10.6 公式处理
 
 **策略**：
 - 如果原始模板包含公式，生成的Excel应保留公式结构
@@ -1320,7 +1522,7 @@ workbook.write(new FileOutputStream(outputPath));
 |------|------|-----------|
 | P0 - 基础框架 | 项目搭建、数据库建表、认证集成、权限框架 | 3天 |
 | P1 - 文件管理 | 公司CRUD、文件上传/下载/列表、Azure Blob集成 | 3天 |
-| P2 - 数据湖集成 | API调用、科目拆分、Excel生成 | 3天 |
+| P2 - 数据湖集成 | API调用、科目拆分、Aspose模板填充/公式重算/Excel生成 | 3天 |
 | P3 - 台账生成（核心） | 各Sheet页生成器、台账组装、前置校验 | 7天 |
 | P4 - 前端页面 | 首页、公司详情页、上传/拉取/生成弹窗 | 5天 |
 | P5 - 配置与权限 | 配置表管理CRUD、权限管理页面 | 3天 |
@@ -1340,13 +1542,17 @@ workbook.write(new FileOutputStream(outputPath));
 | 5 | 台账Excel的具体格式/样式要求 | ✅ 已确认 | 需要与现有Excel模板格式完全一致 |
 | 6 | 数据湖API的具体域名和认证方式 | ✅ 已确认 | 参考InvoiceCommandService实现，使用PlatformRemote，域名配置在application.yml |
 | 7 | 【睿景月结数据表】的数据来源 | ✅ 已确认 | 用户上传的文件，模板稍后补充 |
-| 8 | 增值税变动表中"异地预缴抵减"的取值逻辑 | 待确认 | 仅2320/2355有此字段，从哪取数？ |
-| 9 | 财务BP的权限级别 | ✅ 已确认 | 已简化为两级权限：超级管理员+公司使用者 |
+| 8 | 增值税变动表中"异地预缴抵减"的取值逻辑 | ✅ 已确认 | 仅2320/2355；取台账期【增值税变动表】条目=异地预缴抵减的合计值（依据V2.0配置与累计税金汇总表） |
+`n> 说明：sheet覆盖范围与公司差异以《税务台账生成逻辑_V2.0.xlsx》“说明”sheet为唯一来源。`n| 9 | 财务BP的权限级别 | ✅ 已确认 | 已简化为两级权限：超级管理员+公司使用者 |
 | 10 | 台账生成失败后的回滚策略 | 待确认 | 是否删除已生成的部分数据？ |
 | 11 | 台账导出时是否包含公式 | ✅ 已确认 | 采用混合模式：系统计算字段填值，汇总类单元格保留公式 |
-| 12 | 大量数据时的性能优化方案 | 待确认 | 数据量达到多少时需要特殊处理？ |
-| 13 | 睿景月结数据表的具体模板 | 待确认 | 用户表示稍后会补充模板文件 |
-
+| 12 | 大量数据时的性能优化方案 | ✅ 已确认 | 暂不纳入当前交付范围，作为后续优化方向处理 |
+| 13 | 睿景月结数据表的具体模板 | ✅ 已确认 | 已提供，按《税务台账生成逻辑_V2.0.xlsx》的【睿景景程月结数据表-报税】sheet执行 |
+| 14 | 默认模式（AUTO/GATED） | ✅ 已确认 | 默认AUTO，可切换GATED |
+| 15 | 人工闸门粒度 | ✅ 已确认 | 按批次闸门，不按单sheet |
+| 16 | 中间快照保留期 | ✅ 已确认 | 永久保留 |
+| 17 | 输入变更后运行策略 | ✅ 已确认 | 强制新建run，不复用旧run |
+| 18 | 对外展示策略 | ✅ 已确认 | 仅展示最新有效run |
 ---
 
 ## 十二、下一步行动建议
@@ -1364,10 +1570,10 @@ workbook.write(new FileOutputStream(outputPath));
    - 用户上传的文件
    - 模板样式会稍后补充
 
-3. **"异地预缴抵减"取值来源**
-   - 增值税变动表中，2320/2355公司的"异地预缴抵减"从哪取数？
-   - **推测**：可能从"项目累计缴纳"表的"异地预缴"列汇总而来
-   - 需要确认：从哪个表？哪个字段？什么汇总逻辑？
+3. ~~**"异地预缴抵减"取值来源**~~ ✅ 已确认
+   - 仅适用于2320/2355
+   - 取台账期【增值税变动表】中条目=异地预缴抵减的合计字段值
+   - 依据：V2.0中的【增值税变动表基础条目配置表】与【累计税金汇总表-2320、2355】
 
 **优先级P1（开发过程中可以逐步明确）**：
 
@@ -1384,9 +1590,8 @@ workbook.write(new FileOutputStream(outputPath));
    - 采用混合模式：系统计算字段填值，汇总类单元格保留公式
    - 具体策略见第10.4节
 
-7. **睿景月结数据表模板**
-   - 用户表示会稍后补充模板文件
-   - 需要明确该Sheet在台账中的取值逻辑
+7. ~~**睿景月结数据表模板**~~ ✅ 已确认
+   - 已提供模板，按《税务台账生成逻辑_V2.0.xlsx》的【睿景景程月结数据表-报税】sheet执行
 
 **优先级P2（优化阶段考虑）**：
 
@@ -1434,11 +1639,11 @@ workbook.write(new FileOutputStream(outputPath));
 1. 文件上传/下载/列表接口
 2. 数据湖API调用封装（参考InvoiceCommandService）
 3. 科目拆分逻辑
-4. 数据湖文件Excel生成（使用EasyExcel）
+4. 数据湖文件Aspose模板填充/公式重算/Excel生成（使用Aspose.Cells）
 1. 文件上传/下载/列表接口
 2. 数据湖API调用封装
 3. 科目拆分逻辑
-4. 数据湖文件Excel生成
+4. 数据湖文件Aspose模板填充/公式重算/Excel生成
 
 **第三阶段：台账生成核心（P2）**
 1. 直取型Sheet页生成器（BS、PL、数据湖明细等）
@@ -1518,49 +1723,55 @@ workbook.write(new FileOutputStream(outputPath));
 
 ## 附录B：技术实现速查
 
-### B.1 EasyExcel常用代码片段
+### B.1 Aspose.Cells常用代码片段
 
 ```java
-// 读取Excel
-List<Model> list = EasyExcel.read(file).head(Model.class).sheet().doReadSync();
+// 读取Excel模板
+Workbook wb = new Workbook(templatePath);
+Worksheet ws = wb.getWorksheets().get("Sheet名称");
 
-// 写入Excel
-EasyExcel.write(file, Model.class).sheet("Sheet名称").doWrite(data);
+// 写入单元格
+ws.getCells().get("B5").putValue("示例值");
 
-// 基于模板填充
-ExcelWriter excelWriter = EasyExcel.write(file).withTemplate(template).build();
-excelWriter.fill(data, writeSheet);
+// 保存Excel
+wb.save(outputPath);
 ```
 
-### B.2 Apache POI公式处理示例
+```java
+// 基于模板批量填值（示例）
+Workbook wb = new Workbook(templatePath);
+Worksheet ws = wb.getWorksheets().get("Sheet名称");
+Cells cells = ws.getCells();
+for (int i = 0; i < rows.size(); i++) {
+    cells.get(5 + i, 0).putValue(rows.get(i).getName());
+    cells.get(5 + i, 1).putValue(rows.get(i).getAmount().doubleValue());
+}
+wb.save(outputPath);
+```
+
+### B.2 Aspose.Cells公式处理示例
 
 ```java
-// 创建单元格并设置公式
-Workbook workbook = WorkbookFactory.create(templateFile);
-Sheet sheet = workbook.getSheet("增值税变动表");
-Row row = sheet.getRow(10);
-Cell formulaCell = row.createCell(15);
+Workbook wb = new Workbook(templatePath);
+Worksheet ws = wb.getWorksheets().get("Summary表");
 
 // 设置公式
-formulaCell.setCellFormula("SUM(E2:E100)");
+ws.getCells().get("E100").setFormula("=SUM(E2:E99)");
 
-// 判断单元格类型并获取值
-if (cell.getCellType() == CellType.FORMULA) {
-    FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
-    CellValue evaluated = evaluator.evaluate(cell);
-    double value = evaluated.getNumberValue();
-}
+// 全工作簿公式重算
+wb.calculateFormula();
 
-// 复制单元格(包含公式)
-Cell sourceCell = sourceRow.getCell(5);
-Cell targetCell = targetRow.createCell(5);
-if (sourceCell.getCellType() == CellType.FORMULA) {
-    targetCell.setCellFormula(sourceCell.getCellFormula());
-} else if (sourceCell.getCellType() == CellType.NUMERIC) {
-    targetCell.setCellValue(sourceCell.getNumericCellValue());
-}
+// 可选：读取计算结果
+Object value = ws.getCells().get("E100").getValue();
+
+wb.save(outputPath);
 ```
 
+```java
+// 复制模板行（保留样式与公式）
+Cells cells = ws.getCells();
+cells.copyRow(cells, 10, 20); // 将第11行复制到第21行
+```
 ### B.3 Azure Blob Storage常用代码
 
 ```java
@@ -1693,3 +1904,6 @@ public class PermissionInterceptor implements HandlerInterceptor {
 | 3 | 预开票收入计提冲回统计的详细逻辑 | ✅ 已确认 | 用户上传的文件，系统直接取用，无需计算 |
 | 4 | 1月份台账生成时上年度12月台账数据来源 | ✅ 已确认 | 系统不支持跨年数据处理，1月份期初留抵进项税取0 |
 | 5 | 台账Excel的具体格式/样式要求 | ✅ 已确认 | 需要与现有Excel模板格式完全一致 |
+
+
+

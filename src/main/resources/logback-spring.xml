@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS,UTC} [%thread] [%logger{36}.%M\(%file:%line\)] [%level] [%X{user}] [%X{trace_id}] - %msg%n
-            </pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS,Asia/Shanghai} [%level] [%thread] [%logger{36}.%M\(%file:%line\)] [%X{user}] %X{tl} - %msg%n</pattern>
             <!-- 控制台也要使用UTF-8，不要使用GBK，否则会中文乱码 -->
             <charset>UTF-8</charset>
         </encoder>
     </appender>
 
-    <appender name="errorAlarm" class="com.envision.bunny.infrastructure.notice.alarm.WecomAlarm">
+    <appender name="errorAlarm" class="com.envision.epc.infrastructure.notice.alarm.WecomAlarm">
         <!--如果只是想要 Error 级别的日志，那么需要过滤一下，默认是 info 级别的，ThresholdFilter-->
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>ERROR</level>
