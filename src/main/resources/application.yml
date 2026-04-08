@@ -222,6 +222,8 @@ custom:
       menu:    # 需要开启menu权限的表
   crypto:
     secret-key: abcdefghijklmnopqrstuvwxyz1234567890
+  taxledger:
+    super-admin-user-codes: 59930
   vdi-ips:
     - 10.86.160.0/22
     - 10.86.164.0/22
