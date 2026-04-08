@@ -1,7 +1,7 @@
 ﻿# EPC进项税报表系统 - 详细设计文档
 
-> 版本：v1.1  
-> 日期：2026-03-30  
+> 版本：v1.2  
+> 日期：2026-04-08  
 > 状态：评审中
 
 ---
@@ -19,7 +19,7 @@
 | 文件管理 | 按公司+月份维度管理上传文件和数据湖拉取文件 |
 | 自动生成 | 基于上传数据和配置规则，自动生成税务台账Excel |
 | 历史累积 | 台账支持月份间数据依赖，支持无限期历史留存 |
-| 权限控制 | 超级管理员+公司级权限的双层权限体系 |
+| 权限控制 | 超级管理员 + 公司用户映射（公司维度） |
 
 **V1上线策略补充**：
 - 交付顺序采用“后端核心能力优先、前端并行跟进、最后统一联调”。
@@ -46,6 +46,12 @@
 | 台账Sheet页 | 最多26个 |
 | 数据湖科目拆分 | 5类（收入/销项/进项/所得税/其他） |
 
+### 1.5 最近决策同步（2026-04-08）
+
+- 公司主数据统一：`company_code` 只以 `t_tax_company_code_config` 为唯一来源，`t_tax_company` 退出模型。
+- 数据库迁移：新增迁移脚本删除 `t_tax_company`（`DROP TABLE IF EXISTS t_tax_company`）。
+- 前端交互约束：除“公司代码配置”页外，所有弹窗中的“公司代码”字段均改为下拉选择，数据实时查询 `t_tax_company_code_config`，禁止手工输入。
+
 ---
 
 ## 二、系统架构设计
@@ -70,7 +76,7 @@
 │  ┌──────────┐  ┌──────────────┐  ┌─────────────────┐    │
 │  │配置管理   │  │数据湖集成模块  │  │权限管理模块      │    │
 │  │(5张配置表) │  │(API调用+     │  │(超级管理员+     │    │
-│  │          │  │ 数据拆分)     │  │ 公司级权限)      │    │
+│  │          │  │ 数据拆分)     │  │ 公司用户映射)     │    │
 │  └──────────┘  └──────────────┘  └─────────────────┘    │
 └────────┬───────────────┬────────────────┬───────────────┘
          │               │                │
@@ -85,12 +91,12 @@
 | 模块 | 职责 | 核心类 |
 |------|------|--------|
 | `auth` | Okta认证、用户信息管理 | `AuthController`, `UserService` |
-| `company` | 公司CRUD、公司配置 | `CompanyController`, `CompanyService` |
+| `company-code` | 公司代码主数据维护（统一来源） | `TaxConfigController`, `TaxConfigService` |
 | `file` | 文件上传、下载、Azure Blob管理 | `FileController`, `FileService`, `BlobStorageService` |
 | `datalake` | 数据湖API调用、科目拆分、Aspose模板填充/公式重算/Excel生成 | `DataLakeController`, `DataLakeService`, `AccountSplitService` |
 | `ledger` | 台账生成核心逻辑（run驱动，含重试/续跑/失效） | `LedgerController`, `LedgerService` |
 | `config` | 5张配置表的CRUD管理 | `ConfigController`, `ConfigService` |
-| `permission` | 权限管理（超管+公司级） | `PermissionController`, `PermissionService` |
+| `permission` | 权限管理（超级管理员+公司用户映射） | `PermissionController`, `PermissionService` |
 
 ### 2.3 目录结构
 
@@ -98,7 +104,6 @@
 src/main/java/com/xxx/taxledger/
 ├── controller/
 │   ├── AuthController.java
-│   ├── CompanyController.java
 │   ├── FileController.java
 │   ├── DataLakeController.java
 │   ├── LedgerController.java
@@ -107,8 +112,6 @@ src/main/java/com/xxx/taxledger/
 ├── service/
 │   ├── auth/
 │   │   └── AuthService.java
-│   ├── company/
-│   │   └── CompanyService.java
 │   ├── file/
 │   │   ├── FileService.java
 │   │   └── BlobStorageService.java
@@ -138,7 +141,6 @@ src/main/java/com/xxx/taxledger/
 │   └── permission/
 │       └── PermissionService.java
 ├── entity/
-│   ├── Company.java
 │   ├── FileRecord.java
 │   ├── LedgerRecord.java
 │   ├── CompanyCodeConfig.java
@@ -157,9 +159,8 @@ src/main/java/com/xxx/taxledger/
 │   ├── FileCategoryEnum.java          # 文件类别枚举
 │   ├── FileSourceEnum.java            # 文件来源枚举（上传/数据湖）
 │   ├── AccountTypeEnum.java           # 科目分类枚举
-│   └── PermissionLevelEnum.java       # 权限级别枚举
+│   └── PermissionScopeEnum.java       # 权限范围枚举（平台/公司）
 ├── repository/
-│   ├── CompanyRepository.java
 │   ├── FileRecordRepository.java
 │   ├── LedgerRecordRepository.java
 │   ├── CompanyCodeConfigRepository.java
@@ -181,11 +182,10 @@ src/main/java/com/xxx/taxledger/
 ### 3.1 ER关系
 
 ```
-Company (1) ──< FileRecord (N)
-Company (1) ──< LedgerRecord (N)
-Company (1) ──< UserPermission (N)
+CompanyCodeConfig (1) ──< FileRecord (N)
+CompanyCodeConfig (1) ──< LedgerRecord (N)
+CompanyCodeConfig (1) ──< UserPermission (N)
 
-CompanyCodeConfig (N)  -- 独立配置表，与Company通过company_code关联
 TaxCategoryConfig (N)
 ProjectConfig (N)
 VatBasicItemConfig (N)
@@ -194,7 +194,7 @@ VatSpecialItemConfig (N)
 
 ### 3.2 表结构
 
-#### 3.2.1 公司表 `t_company`
+#### 3.2.1 公司代码主数据表 `t_tax_company_code_config`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
@@ -204,7 +204,6 @@ VatSpecialItemConfig (N)
 | finance_bp_ad | VARCHAR(100) | 财务BP AD号 | |
 | finance_bp_name | VARCHAR(100) | 财务BP姓名 | |
 | finance_bp_email | VARCHAR(200) | 财务BP邮箱 | |
-| status | TINYINT | 状态(1启用/0禁用) | DEFAULT 1 |
 | created_by | VARCHAR(100) | 创建人 | |
 | created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
 | updated_by | VARCHAR(100) | 更新人 | |
@@ -269,19 +268,11 @@ VatSpecialItemConfig (N)
 
 **唯一约束**：`UNIQUE(company_code, year_month)`，每个公司每月只能有一条台账记录（重新生成则覆盖）
 
-#### 3.2.4 公司代码配置表 `t_company_code_config`
+#### 3.2.4 公司主数据来源约束（实现补充）
 
-| 字段 | 类型 | 说明 | 约束 |
-|------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
-| company_code | VARCHAR(20) | 公司代码 | NOT NULL, UNIQUE |
-| company_name | VARCHAR(200) | 公司名称 | NOT NULL |
-| finance_bp_ad | VARCHAR(100) | 财务BP AD号 | |
-| finance_bp_name | VARCHAR(100) | 财务BP姓名 | |
-| finance_bp_email | VARCHAR(200) | 财务BP邮箱 | |
-| created_by | VARCHAR(100) | 创建人 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+- 历史 `t_tax_company` 已退役，主数据不再双轨维护。
+- 所有 `company_code` 相关查询、校验、下拉选项均以 `t_tax_company_code_config` 为唯一来源。
+- 删除公司代码配置时采用软删，避免对历史文件、台账、权限记录产生物理级联影响。
 
 #### 3.2.5 税目配置表 `t_tax_category_config`
 
@@ -345,21 +336,19 @@ VatSpecialItemConfig (N)
 | user_id | VARCHAR(100) | 用户ID（Okta userId或工号） | NOT NULL, IDX |
 | user_name | VARCHAR(100) | 用户姓名 | NOT NULL |
 | employee_id | VARCHAR(50) | 工号 | NOT NULL, UNI |
-| permission_level | VARCHAR(20) | 权限级别 | NOT NULL |
-| company_code | VARCHAR(20) | 公司代码（SUPER_ADMIN为空） | IDX |
+| company_code | VARCHAR(20) | 公司代码 | NOT NULL, IDX |
 | granted_by | VARCHAR(100) | 授权人工号 | |
 | created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
 
-**permission_level 枚举值**：
-- `SUPER_ADMIN`：超级管理员，可访问所有公司、维护5张配置表（配置在application.yml）
-- `COMPANY_ADMIN`：公司管理员，可管理该公司用户权限
-- `COMPANY_USER`：公司普通用户，可查看/操作该公司数据
+**模型说明**：
+- 本表仅保存“用户-公司”访问映射，不再区分 `permission_level`。
+- 表中存在一条记录，表示该用户可访问该公司的业务页面（不含5个配置页），并可给他人分配该公司的访问权限。
+- 超级管理员不落表，统一由 `application.yml` 配置维护。
 
 **约束**：
 - `(employee_id, company_code)` 联合唯一，同一用户对同一公司只有一条权限记录
-- `permission_level=SUPER_ADMIN` 时，`company_code` 必须为 NULL
-- `permission_level` 非 SUPER_ADMIN 时，`company_code` 不能为 NULL
-- `UNIQUE(user_id, company_code, permission_level)`
+- `company_code` 必填
+- `UNIQUE(user_id, company_code)`
 
 ---
 
@@ -455,15 +444,17 @@ VatSpecialItemConfig (N)
 | GET | `/auth/current-user` | 获取当前登录用户信息 | 登录即可 |
 | GET | `/auth/permissions` | 获取当前用户权限列表 | 登录即可 |
 
-#### 4.2.2 公司管理模块
+#### 4.2.2 公司代码主数据模块
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | `/companies` | 获取公司列表 | 所有已认证用户 |
-| POST | `/companies` | 新增公司 | SUPER_ADMIN |
-| PUT | `/companies/{id}` | 修改公司信息 | SUPER_ADMIN |
-| GET | `/companies/{companyCode}/detail` | 获取公司详情（含月份列表） | 该公司权限用户 |
-| GET | `/companies/{companyCode}/months` | 获取该公司所有有数据的月份 | 该公司权限用户 |
+| GET | `/tax-ledger/config/company-code` | 获取公司代码列表 | 所有已认证用户 |
+| POST | `/tax-ledger/config/company-code` | 新增/更新公司代码 | SUPER_ADMIN |
+| DELETE | `/tax-ledger/config/company-code/{id}` | 删除公司代码 | SUPER_ADMIN |
+
+**设计约束补充**：
+- 不再提供独立 `/companies` 写接口，避免与配置表双写导致主数据不一致。
+- 业务页面读取公司列表时，统一调用 `/tax-ledger/config/company-code`。
 
 #### 4.2.3 文件管理模块
 
@@ -471,7 +462,7 @@ VatSpecialItemConfig (N)
 |------|------|------|------|
 | POST | `/companies/{companyCode}/months/{yearMonth}/files/upload` | 上传文件到指定公司月份 | 该公司权限用户 |
 | GET | `/companies/{companyCode}/months/{yearMonth}/files` | 查询指定公司月份的文件列表 | 该公司权限用户 |
-| DELETE | `/companies/{companyCode}/months/{yearMonth}/files/{fileId}` | 删除文件记录 | 该公司ADMIN或SUPER_ADMIN |
+| DELETE | `/companies/{companyCode}/months/{yearMonth}/files/{fileId}` | 删除文件记录 | 已具备该公司权限用户或SUPER_ADMIN |
 | GET | `/files/{fileId}/download` | 下载文件 | 该公司权限用户 |
 
 **上传接口详细设计**：
@@ -566,15 +557,16 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
 **读取优先级补充**：
 - `companyCode` 有值：返回“通用配置（company_code为空）+ 公司覆盖配置（company_code=指定公司）”。
 - `companyCode` 为空：返回全部未删除配置（用于配置总览与总数统计）。
+- UI 下拉场景：前端打开公司代码下拉或输入搜索关键字时，实时调用该接口并仅允许选择返回值。
 
 #### 4.2.7 权限管理模块
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | `/tax-ledger/permissions` | 获取权限列表（可按公司筛选） | SUPER_ADMIN/公司管理员 |
-| POST | `/tax-ledger/permissions` | 单条授权 | SUPER_ADMIN/公司管理员 |
-| POST | `/tax-ledger/permissions/batch` | 批量授权（一次提交多员工） | SUPER_ADMIN/公司管理员 |
-| DELETE | `/tax-ledger/permissions` | 撤销授权（按 employeeId + companyCode） | SUPER_ADMIN/公司管理员 |
+| GET | `/tax-ledger/permissions` | 获取权限列表（可按公司筛选） | SUPER_ADMIN/已具备该公司权限用户 |
+| POST | `/tax-ledger/permissions` | 单条授权 | SUPER_ADMIN/已具备该公司权限用户 |
+| POST | `/tax-ledger/permissions/batch` | 批量授权（一次提交多员工） | SUPER_ADMIN/已具备该公司权限用户 |
+| DELETE | `/tax-ledger/permissions` | 撤销授权（按 employeeId + companyCode） | SUPER_ADMIN/已具备该公司权限用户 |
 | GET | `/user/list` | 员工检索（姓名/工号/域账号） | 已认证用户 |
 
 **批量授权请求示例**：
@@ -584,14 +576,12 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
     "userId": "zhangsan",
     "userName": "张三",
     "employeeId": "59930",
-    "permissionLevel": "COMPANY_USER",
     "companyCode": "2320"
   },
   {
     "userId": "lisi",
     "userName": "李四",
     "employeeId": "60218",
-    "permissionLevel": "COMPANY_USER",
     "companyCode": "2320"
   }
 ]
@@ -1001,13 +991,17 @@ public enum AccountTypeEnum {
 │  侧边栏菜单                                        │
 │  ├── 公司管理                                      │
 │  ├── 配置管理（仅SUPER_ADMIN可见）                   │
-│  └── 权限管理（SUPER_ADMIN或公司ADMIN可见）          │
+│  └── 权限管理（SUPER_ADMIN或当前公司授权用户可见）     │
 ├──────────────────────────────────────────────────┤
 │                                                  │
 │                   主内容区                          │
 │                                                  │
 └──────────────────────────────────────────────────┘
 ```
+
+**全局交互约束**：
+- 涉及“公司代码”的弹窗表单（除“公司代码配置”页）统一使用下拉选择，不允许手工输入。
+- 下拉选项实时读取公司代码配置，前端与后端共同保证“只能选已配置公司代码”。
 
 ### 6.2 首页 - 公司列表页
 
@@ -1178,6 +1172,8 @@ public enum AccountTypeEnum {
 - 新增/编辑：使用独立弹窗（Modal）录入，不嵌入列表区域。
 - 删除操作：必须二次确认（Popconfirm），防止误操作。
 - 分页：展示总条数与页码，分页文案中文化（示例：`共X条`、`10/页`）。
+- 字段约束：仅“公司代码配置”页允许手工输入公司代码；其余配置页中的 `companyCode` 字段必须使用下拉选择。
+- 下拉数据源：实时查询 `/tax-ledger/config/company-code`，禁止自由输入，确保公司代码只来自主数据表。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -1206,9 +1202,11 @@ public enum AccountTypeEnum {
 **交互补充规范（已落地）**：
 - 主页面仅保留“添加权限”按钮，点击后弹出独立授权弹窗。
 - 员工选择使用可搜索下拉（调用 `/user/list`），支持多选员工。
-- 批量提交时调用 `/tax-ledger/permissions/batch`，一次完成同权限级别、同公司代码的多员工授权。
-- 权限级别展示中文标签：`超级管理员 / 公司管理员 / 公司用户`。
+- 批量提交时调用 `/tax-ledger/permissions/batch`，一次完成同公司代码的多员工授权。
+- 取消 `permission_level` 字段，权限页仅维护“用户-公司”映射关系。
 - 权限列表右下角分页，展示总条数与每页条数中文文案。
+- 公司代码字段使用下拉选择（非输入框），数据实时来自 `/tax-ledger/config/company-code`。
+- 新增/撤销权限均要求明确公司代码。
 
 **超级管理员视图**：
 
@@ -1240,12 +1238,12 @@ public enum AccountTypeEnum {
 │                                                         │
 │  选择公司：[上海睿景(2320) ▼]                              │
 │                                                         │
-│  ┌──────────┬──────────┬────────────┬─────────────────┐ │
-│  │ 用户姓名   │ 权限级别   │ 授权人      │ 操作            │ │
-│  ├──────────┼──────────┼────────────┼─────────────────┤ │
-│  │ 王五     │ 公司管理员 │ 张三       │ [修改权限][移除] │ │
-│  │ 赵六     │ 普通用户   │ 王五       │ [修改权限][移除] │ │
-│  └──────────┴──────────┴────────────┴─────────────────┘ │
+│  ┌──────────┬────────────┬─────────────────────────────┐ │
+│  │ 用户姓名   │ 授权人      │ 操作                        │ │
+│  ├──────────┼────────────┼─────────────────────────────┤ │
+│  │ 王五     │ 张三       │ [移除]                       │ │
+│  │ 赵六     │ 王五       │ [移除]                       │ │
+│  └──────────┴────────────┴─────────────────────────────┘ │
 │                                                         │
 │  [+ 添加用户权限]                                          │
 └─────────────────────────────────────────────────────────┘
@@ -1264,19 +1262,12 @@ SUPER_ADMIN（超级管理员）
 ├── 可管理超级管理员列表
 └── 可管理所有公司的用户权限
 
-COMPANY_ADMIN（公司管理员）
-├── 可访问指定公司
-├── 可管理该公司下的用户权限
-├── 支持单条授权与批量授权（同公司范围）
-├── 可上传/下载该公司文件
-├── 可拉取数据湖、生成台账
-└── 不可修改配置表
-
-COMPANY_USER（公司普通用户）
+COMPANY_MEMBER（公司授权用户）
 ├── 可访问指定公司
 ├── 可上传/下载该公司文件
 ├── 可拉取数据湖、生成台账
-└── 不可管理权限、不可修改配置表
+├── 可给他人分配该公司的访问权限
+└── 不可管理5个配置页
 ```
 
 ### 7.2 权限校验拦截器
@@ -1300,11 +1291,8 @@ public class PermissionInterceptor implements HandlerInterceptor {
         List<UserPermission> permissions = permissionService
             .findByUserId(userId);
         
-        // 3. 校验逻辑
-        boolean isSuperAdmin = permissions.stream()
-            .anyMatch(p -> "SUPER_ADMIN".equals(p.getPermissionLevel()));
-        
-        if (isSuperAdmin) return true;
+        // 3. 校验逻辑：SUPER_ADMIN（来自配置）放行
+        if (superAdminConfig.contains(userId)) return true;
         
         if (companyCode != null) {
             boolean hasAccess = permissions.stream()
@@ -1600,7 +1588,8 @@ workbook.save(outputPath);
 | 6 | 数据湖API的具体域名和认证方式 | ✅ 已确认 | 参考InvoiceCommandService实现，使用PlatformRemote，域名配置在application.yml |
 | 7 | 【睿景月结数据表】的数据来源 | ✅ 已确认 | 用户上传的文件，模板稍后补充 |
 | 8 | 增值税变动表中"异地预缴抵减"的取值逻辑 | ✅ 已确认 | 仅2320/2355；取台账期【增值税变动表】条目=异地预缴抵减的合计值（依据V2.0配置与累计税金汇总表） |
-`n> 说明：sheet覆盖范围与公司差异以《税务台账生成逻辑_V2.0.xlsx》“说明”sheet为唯一来源。`n| 9 | 财务BP的权限级别 | ✅ 已确认 | 已简化为两级权限：超级管理员+公司使用者 |
+> 说明：sheet覆盖范围与公司差异以《税务台账生成逻辑_V2.0.xlsx》“说明”sheet为唯一来源。  
+| 9 | 财务BP的权限模型 | ✅ 已确认 | 已简化为两级权限：超级管理员 + 公司授权用户（无 permission_level 字段） |
 | 10 | 台账生成失败后的回滚策略 | 待确认 | 是否删除已生成的部分数据？ |
 | 11 | 台账导出时是否包含公式 | ✅ 已确认 | 采用混合模式：系统计算字段填值，汇总类单元格保留公式 |
 | 12 | 大量数据时的性能优化方案 | ✅ 已确认 | 暂不纳入当前交付范围，作为后续优化方向处理 |
@@ -1634,10 +1623,10 @@ workbook.save(outputPath);
 
 **优先级P1（开发过程中可以逐步明确）**：
 
-4. ~~**财务BP权限级别**~~ ✅ 已确认
+4. ~~**财务BP权限模型**~~ ✅ 已确认
    - 已简化为两级权限模型
    - 超级管理员配置在application.yml
-   - 公司使用者由超级管理员或公司管理员分配
+   - 公司使用者由超级管理员或已具备该公司权限的用户分配
 
 5. **台账生成失败的回滚策略**
    - 部分Sheet生成失败，是否回滚已生成的Sheet？
@@ -1726,7 +1715,7 @@ workbook.save(outputPath);
 4. 数据湖拉取界面
 5. 台账生成与下载界面
 6. 配置管理界面（仅超级管理员）
-7. 权限管理界面（超级管理员和公司管理员）
+7. 权限管理界面（超级管理员和公司授权用户）
 
 **第六阶段：测试与优化（P5）**
 1. 单元测试

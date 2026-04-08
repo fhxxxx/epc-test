@@ -4,6 +4,7 @@ import {
   Card,
   Col,
   ConfigProvider,
+  DatePicker,
   Form,
   Input,
   Layout,
@@ -21,6 +22,7 @@ import {
 } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import client from "./api/client";
 import "./App.css";
 
@@ -28,15 +30,15 @@ const { Header, Content } = Layout;
 const { Text } = Typography;
 
 const FILE_CATEGORIES = [
-  "BS",
-  "PL",
-  "BS_APPENDIX_TAX_PAYABLE",
-  "PL_APPENDIX_2320",
-  "PL_APPENDIX_PROJECT",
-  "STAMP_TAX",
-  "VAT_OUTPUT",
-  "VAT_INPUT_CERT",
-  "CUMULATIVE_PROJECT_TAX"
+  { value: "BS", label: "资产负债表（BS）" },
+  { value: "PL", label: "利润表（PL）" },
+  { value: "BS_APPENDIX_TAX_PAYABLE", label: "BS附表-应交税费" },
+  { value: "PL_APPENDIX_2320", label: "PL附表（2320/2355）" },
+  { value: "PL_APPENDIX_PROJECT", label: "PL附表（项目公司）" },
+  { value: "STAMP_TAX", label: "印花税明细" },
+  { value: "VAT_OUTPUT", label: "增值税销项" },
+  { value: "VAT_INPUT_CERT", label: "增值税进项认证清单" },
+  { value: "CUMULATIVE_PROJECT_TAX", label: "累计项目税收明细表" }
 ];
 
 const CONFIG_META = [
@@ -152,12 +154,7 @@ function normalizePayload(payload) {
   return payload;
 }
 
-function ymToFiscalPeriod(yearMonth) {
-  return `${yearMonth.replace("-", "")}1`;
-}
-
 function CompanyPanel({ onSelectCompany }) {
-  const [form] = Form.useForm();
   const [rows, setRows] = useState([]);
 
   const load = async () => {
@@ -174,34 +171,8 @@ function CompanyPanel({ onSelectCompany }) {
   }, []);
 
   return (
-    <Card title="公司管理" extra={<Button onClick={load}>刷新</Button>} className="soft-card">
-      <Form
-        form={form}
-        layout="inline"
-        onFinish={async (values) => {
-          try {
-            await client.post("/tax-ledger/config/company-code", values);
-            message.success("公司保存成功");
-            form.resetFields();
-            load();
-          } catch {
-            // 失败提示已由全局拦截器处理
-          }
-        }}
-      >
-        <Form.Item name="companyCode" rules={[{ required: true, message: "请输入公司代码" }]}>
-          <Input placeholder="公司代码" />
-        </Form.Item>
-        <Form.Item name="companyName" rules={[{ required: true, message: "请输入公司名称" }]}>
-          <Input placeholder="公司名称" />
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit">保存公司</Button>
-        </Form.Item>
-      </Form>
-
+    <Card title="公司管理" className="soft-card">
       <Table
-        style={{ marginTop: 16 }}
         rowKey="id"
         dataSource={Array.isArray(rows) ? rows : []}
         columns={[
@@ -212,25 +183,6 @@ function CompanyPanel({ onSelectCompany }) {
             render: (_, row) => (
               <Space>
                 <Button onClick={() => onSelectCompany(row.companyCode)}>选择</Button>
-                <Popconfirm
-                  overlayClassName="pretty-popconfirm"
-                  title="确认删除该公司？"
-                  description={`公司代码：${row.companyCode}。删除后需重新创建才能恢复。`}
-                  okText="确认删除"
-                  cancelText="取消"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={async () => {
-                    try {
-                      await client.delete(`/tax-ledger/config/company-code/${row.id}`);
-                      message.success("公司删除成功");
-                      load();
-                    } catch {
-                      // 失败提示已由全局拦截器处理
-                    }
-                  }}
-                >
-                  <Button danger>删除</Button>
-                </Popconfirm>
               </Space>
             )
           }
@@ -244,6 +196,19 @@ function FilePanel({ companyCode }) {
   const [rows, setRows] = useState([]);
   const [yearMonth, setYearMonth] = useState("2026-01");
   const [category, setCategory] = useState("BS");
+  const [pullModalOpen, setPullModalOpen] = useState(false);
+  const [pullSubmitting, setPullSubmitting] = useState(false);
+  const [companyOptions, setCompanyOptions] = useState([]);
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [pullForm] = Form.useForm();
+
+  const periodOptions = useMemo(
+    () => Array.from({ length: 16 }, (_, i) => {
+      const period = String(i + 1).padStart(2, "0");
+      return { value: period, label: period };
+    }),
+    []
+  );
 
   const load = async () => {
     if (!companyCode) {
@@ -258,13 +223,105 @@ function FilePanel({ companyCode }) {
     }
   };
 
+  const loadCompanyOptions = async (keyword = "") => {
+    try {
+      setCompanyLoading(true);
+      const { data } = await client.get("/tax-ledger/config/company-code");
+      const list = asArray(data);
+      const normalizedKeyword = keyword.trim().toLowerCase();
+      const filtered = normalizedKeyword
+        ? list.filter((item) => {
+            const code = String(item?.companyCode ?? "").toLowerCase();
+            const name = String(item?.companyName ?? "").toLowerCase();
+            return code.includes(normalizedKeyword) || name.includes(normalizedKeyword);
+          })
+        : list;
+      setCompanyOptions(
+        filtered.map((item) => ({
+          value: item.companyCode,
+          label: `${item.companyCode}${item.companyName ? ` - ${item.companyName}` : ""}`
+        }))
+      );
+    } catch {
+      setCompanyOptions([]);
+    } finally {
+      setCompanyLoading(false);
+    }
+  };
+
+  const onOpenPullModal = () => {
+    const [year, month] = yearMonth.split("-");
+    const period = String(Number(month || "1")).padStart(2, "0");
+    pullForm.setFieldsValue({
+      companyCodes: companyCode ? [companyCode] : [],
+      fiscalYear: dayjs(`${year}-01-01`),
+      periodStartMonth: period,
+      periodEndMonth: period
+    });
+    setPullModalOpen(true);
+    loadCompanyOptions();
+  };
+
+  const onSubmitPullDataLake = async () => {
+    try {
+      const values = await pullForm.validateFields();
+      const startMonth = Number(values.periodStartMonth);
+      const endMonth = Number(values.periodEndMonth);
+      if (startMonth > endMonth) {
+        message.warning("会计期间开始不能大于结束");
+        return;
+      }
+      setPullSubmitting(true);
+      const fiscalYear = values.fiscalYear.year();
+      const requestMonth = String(Math.min(endMonth, 12)).padStart(2, "0");
+      const requestYearMonth = `${fiscalYear}-${requestMonth}`;
+      const makeFiscalPeriod = (monthValue) => `${fiscalYear}${String(monthValue).padStart(2, "0")}1`;
+      const results = await Promise.allSettled(
+        values.companyCodes.map((code) =>
+          client.post("/tax-ledger/datalake/pull", {
+            companyCode: code,
+            yearMonth: requestYearMonth,
+            fiscalYearPeriodStart: makeFiscalPeriod(startMonth),
+            fiscalYearPeriodEnd: makeFiscalPeriod(endMonth)
+          })
+        )
+      );
+      const successCount = results.filter((item) => item.status === "fulfilled").length;
+      const failedCount = results.length - successCount;
+      if (failedCount === 0) {
+        message.success(`数据湖拉取完成，共 ${successCount} 家公司`);
+      } else if (successCount > 0) {
+        message.warning(`部分完成：成功 ${successCount} 家，失败 ${failedCount} 家`);
+      } else {
+        message.error("数据湖拉取失败，请检查后重试");
+      }
+      if (successCount > 0) {
+        setYearMonth(requestYearMonth);
+        load();
+      }
+      if (failedCount === 0) {
+        setPullModalOpen(false);
+      }
+    } catch {
+      // 校验失败或接口异常提示已处理
+    } finally {
+      setPullSubmitting(false);
+    }
+  };
+
   return (
     <Card
       title="文件管理"
       className="soft-card"
       extra={(
         <Space>
-          <Input value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} style={{ width: 120 }} />
+          <DatePicker
+            picker="month"
+            allowClear={false}
+            format="YYYY-MM"
+            value={dayjs(yearMonth, "YYYY-MM")}
+            onChange={(_, dateString) => setYearMonth(dateString)}
+          />
           <Button onClick={load}>刷新</Button>
         </Space>
       )}
@@ -273,7 +330,7 @@ function FilePanel({ companyCode }) {
         <Select
           value={category}
           onChange={setCategory}
-          options={FILE_CATEGORIES.map((item) => ({ value: item, label: item }))}
+          options={FILE_CATEGORIES}
           style={{ width: 260 }}
         />
         <Upload
@@ -296,27 +353,70 @@ function FilePanel({ companyCode }) {
             }
           }}
         >
-          <Button icon={<UploadOutlined />}>上传文件</Button>
+        <Button icon={<UploadOutlined />}>上传文件</Button>
         </Upload>
-        <Button
-          onClick={async () => {
-            try {
-              await client.post("/tax-ledger/datalake/pull", {
-                companyCode,
-                yearMonth,
-                fiscalYearPeriodStart: ymToFiscalPeriod(yearMonth),
-                fiscalYearPeriodEnd: ymToFiscalPeriod(yearMonth)
-              });
-              message.success("数据湖拉取完成");
-              load();
-            } catch {
-              // 失败提示已由全局拦截器处理
-            }
-          }}
-        >
-          拉取数据湖
-        </Button>
+        <Button onClick={onOpenPullModal}>拉取数据湖</Button>
       </Space>
+
+      <Modal
+        title="数据湖拉取"
+        open={pullModalOpen}
+        destroyOnHidden
+        onCancel={() => setPullModalOpen(false)}
+        onOk={onSubmitPullDataLake}
+        okText="开始拉取"
+        cancelText="取消"
+        confirmLoading={pullSubmitting}
+      >
+        <Form form={pullForm} layout="vertical">
+          <Form.Item
+            name="companyCodes"
+            label="公司代码"
+            rules={[{ required: true, message: "请至少选择一个公司代码" }]}
+          >
+            <Select
+              mode="multiple"
+              showSearch
+              allowClear
+              placeholder="请选择公司代码"
+              loading={companyLoading}
+              options={companyOptions}
+              filterOption={false}
+              onSearch={loadCompanyOptions}
+              onOpenChange={(open) => {
+                if (open) {
+                  loadCompanyOptions();
+                }
+              }}
+            />
+          </Form.Item>
+          <Form.Item
+            name="fiscalYear"
+            label="会计年度"
+            rules={[{ required: true, message: "请选择会计年度" }]}
+          >
+            <DatePicker picker="year" style={{ width: "100%" }} placeholder="请选择年度" />
+          </Form.Item>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item
+              name="periodStartMonth"
+              label="会计期间开始"
+              rules={[{ required: true, message: "请选择会计期间开始" }]}
+              style={{ minWidth: 180 }}
+            >
+              <Select options={periodOptions} placeholder="请选择" />
+            </Form.Item>
+            <Form.Item
+              name="periodEndMonth"
+              label="会计期间结束"
+              rules={[{ required: true, message: "请选择会计期间结束" }]}
+              style={{ minWidth: 180 }}
+            >
+              <Select options={periodOptions} placeholder="请选择" />
+            </Form.Item>
+          </Space>
+        </Form>
+      </Modal>
 
       <Table
         rowKey="id"
@@ -419,6 +519,9 @@ function PermissionPanel({ companyCode }) {
   const [submitting, setSubmitting] = useState(false);
   const [userOptions, setUserOptions] = useState([]);
   const [userLoading, setUserLoading] = useState(false);
+  const [userPageNum, setUserPageNum] = useState(1);
+  const [userHasMore, setUserHasMore] = useState(true);
+  const [userKeyword, setUserKeyword] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [userPool, setUserPool] = useState({});
   const [companyOptions, setCompanyOptions] = useState([]);
@@ -448,14 +551,30 @@ function PermissionPanel({ companyCode }) {
     }
   };
 
-  const searchUser = async (keyword) => {
+  const loadUsers = async ({ keyword = "", pageNum = 1, append = false } = {}) => {
+    if (userLoading) {
+      return;
+    }
     try {
       setUserLoading(true);
       const { data } = await client.get("/user/list", {
-        params: { username: keyword || "", pageNum: 1, pageSize: 20 }
+        params: { username: keyword || "", pageNum, pageSize: 20 }
       });
       const items = asArray(data?.items ?? data);
-      setUserOptions(items);
+      const hasTotalCount = data && Object.prototype.hasOwnProperty.call(data, "totalCount");
+      const totalCount = Number(data?.totalCount ?? 0);
+      const merged = append ? [...userOptions, ...items] : items;
+      const uniqMap = new Map();
+      merged.forEach((item) => {
+        if (item?.userCode) {
+          uniqMap.set(item.userCode, item);
+        }
+      });
+      const uniqList = Array.from(uniqMap.values());
+      setUserOptions(uniqList);
+      setUserPageNum(pageNum);
+      setUserKeyword(keyword);
+      setUserHasMore(hasTotalCount ? uniqList.length < totalCount : items.length >= 20);
       setUserPool((prev) => {
         const next = { ...prev };
         items.forEach((item) => {
@@ -466,10 +585,24 @@ function PermissionPanel({ companyCode }) {
         return next;
       });
     } catch {
-      setUserOptions([]);
+      if (!append) {
+        setUserOptions([]);
+      }
+      setUserHasMore(false);
     } finally {
       setUserLoading(false);
     }
+  };
+
+  const searchUser = async (keyword) => {
+    await loadUsers({ keyword, pageNum: 1, append: false });
+  };
+
+  const loadMoreUsers = async () => {
+    if (!userHasMore || userLoading) {
+      return;
+    }
+    await loadUsers({ keyword: userKeyword, pageNum: userPageNum + 1, append: true });
   };
 
   const onOpenAddModal = () => {
@@ -479,6 +612,12 @@ function PermissionPanel({ companyCode }) {
     if (companyCode) {
       form.setFieldValue("companyCode", companyCode);
     }
+    setUserOptions([]);
+    setUserPool({});
+    setUserPageNum(1);
+    setUserHasMore(true);
+    setUserKeyword("");
+    loadUsers({ keyword: "", pageNum: 1, append: false });
     loadCompanyOptions();
   };
 
@@ -583,6 +722,27 @@ function PermissionPanel({ companyCode }) {
                   filterOption={false}
                   loading={userLoading}
                   onSearch={searchUser}
+                  onPopupScroll={(event) => {
+                    const target = event?.target;
+                    if (!target) return;
+                    const nearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 20;
+                    if (nearBottom) {
+                      loadMoreUsers();
+                    }
+                  }}
+                  dropdownRender={(menu) => (
+                    <div>
+                      {menu}
+                      <div style={{ padding: "6px 12px", textAlign: "center", color: "#8c8c8c", fontSize: 12 }}>
+                        {userLoading ? "加载中..." : userHasMore ? "下滑加载更多" : "没有更多数据了"}
+                      </div>
+                    </div>
+                  )}
+                  onOpenChange={(open) => {
+                    if (open && !userOptions.length) {
+                      loadUsers({ keyword: "", pageNum: 1, append: false });
+                    }
+                  }}
                   onChange={(vals) => {
                     const users = (vals || [])
                       .map((val) => userPool[val])

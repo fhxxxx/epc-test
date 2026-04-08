@@ -1,5 +1,6 @@
 package com.envision.epc.module.taxledger.domain;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.envision.epc.infrastructure.mybatis.AuditingEntity;
 import lombok.Data;
@@ -8,8 +9,7 @@ import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
 
 /**
- * 台账主记录（公司+月份维度）
- */
+ * 鍙拌处涓昏褰曪紙鍏徃+鏈堜唤缁村害锛? */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("t_tax_ledger_record")
@@ -17,6 +17,7 @@ public class TaxLedgerRecord extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;
     /** 账期（yyyy-MM） */
+    @TableField("`year_month`")
     private String yearMonth;
     /** 台账文件名 */
     private String ledgerName;
@@ -35,3 +36,4 @@ public class TaxLedgerRecord extends AuditingEntity {
     /** 逻辑删除标记：0否/1是 */
     private Integer isDeleted;
 }
+

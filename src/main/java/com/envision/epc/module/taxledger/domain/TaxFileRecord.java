@@ -1,12 +1,13 @@
 package com.envision.epc.module.taxledger.domain;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.envision.epc.infrastructure.mybatis.AuditingEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 税务文件记录
+ * 绋庡姟鏂囦欢璁板綍
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -15,6 +16,7 @@ public class TaxFileRecord extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;
     /** 账期（yyyy-MM） */
+    @TableField("`year_month`")
     private String yearMonth;
     /** 文件名 */
     private String fileName;
@@ -31,3 +33,4 @@ public class TaxFileRecord extends AuditingEntity {
     /** 逻辑删除标记：0否/1是 */
     private Integer isDeleted;
 }
+
