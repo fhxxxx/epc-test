@@ -8,22 +8,34 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 权限管理接口
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/tax-ledger/permissions")
 public class TaxPermissionController {
     private final TaxPermissionService permissionService;
 
+    /**
+     * 查询权限列表
+     */
     @GetMapping
     public List<TaxUserPermission> list(@RequestParam(required = false) String companyCode) {
         return permissionService.listByCompany(companyCode);
     }
 
+    /**
+     * 授权
+     */
     @PostMapping
     public TaxUserPermission grant(@RequestBody GrantPermissionCommand command) {
         return permissionService.grant(command);
     }
 
+    /**
+     * 撤销授权
+     */
     @DeleteMapping
     public void revoke(@RequestParam String employeeId, @RequestParam(required = false) String companyCode) {
         permissionService.revoke(employeeId, companyCode);

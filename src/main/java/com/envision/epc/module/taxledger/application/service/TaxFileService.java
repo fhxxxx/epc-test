@@ -22,6 +22,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 税务文件管理服务（上传/下载/覆盖）
+ */
 @Service
 @RequiredArgsConstructor
 public class TaxFileService {
@@ -30,6 +33,9 @@ public class TaxFileService {
     private final TaxFileRecordMapper fileRecordMapper;
     private final TaxPermissionService permissionService;
 
+    /**
+     * 上传用户文件并落库
+     */
     public TaxFileRecord upload(String companyCode, String yearMonth, FileCategoryEnum category, MultipartFile file) throws IOException {
         permissionService.checkCompanyAccess(companyCode);
         if (file == null || file.isEmpty()) {
@@ -37,6 +43,7 @@ public class TaxFileService {
         }
         String originalName = file.getOriginalFilename();
         String filename = originalName == null ? "unknown.xlsx" : originalName;
+        // 按公司+账期+类别分层存储，文件名加时间戳和UUID避免冲突
         String blobPath = String.format("tax-ledger/%s/%s/%s/%s_%s",
                 companyCode, yearMonth, category.name(), LocalDateTime.now().format(TS_FORMATTER), UUID.randomUUID());
 
@@ -46,6 +53,9 @@ public class TaxFileService {
         return saveOrReplace(companyCode, yearMonth, filename, category, FileSourceEnum.UPLOAD, blobPath, file.getSize());
     }
 
+    /**
+     * 同键覆盖保存文件记录（旧记录逻辑删除）
+     */
     public TaxFileRecord saveOrReplace(String companyCode, String yearMonth, String fileName, FileCategoryEnum category,
                                        FileSourceEnum source, String blobPath, Long fileSize) {
         List<TaxFileRecord> existed = fileRecordMapper.selectList(new LambdaQueryWrapper<TaxFileRecord>()
@@ -54,6 +64,7 @@ public class TaxFileService {
                 .eq(TaxFileRecord::getYearMonth, yearMonth)
                 .eq(TaxFileRecord::getFileCategory, category)
                 .eq(TaxFileRecord::getFileSource, source));
+        // 先删除旧版本记录，再插入新版本
         existed.forEach(record -> {
             record.setIsDeleted(1);
             fileRecordMapper.updateById(record);
@@ -73,6 +84,9 @@ public class TaxFileService {
         return record;
     }
 
+    /**
+     * 按公司+账期查询文件列表
+     */
     public List<TaxFileRecord> list(String companyCode, String yearMonth) {
         permissionService.checkCompanyAccess(companyCode);
         return fileRecordMapper.selectList(new LambdaQueryWrapper<TaxFileRecord>()
@@ -82,6 +96,9 @@ public class TaxFileService {
                 .orderByDesc(TaxFileRecord::getCreateTime));
     }
 
+    /**
+     * 下载文件
+     */
     public void download(Long id, HttpServletResponse response) throws IOException {
         TaxFileRecord record = fileRecordMapper.selectById(id);
         if (record == null || record.getIsDeleted() == 1) {
@@ -92,6 +109,7 @@ public class TaxFileService {
         response.setCharacterEncoding("UTF-8");
         String fileName = URLEncoder.encode(record.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        // 从Blob流式写回响应
         blobStorageRemote.loadStream(record.getBlobPath(), response.getOutputStream());
     }
 }

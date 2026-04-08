@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 数据湖拉取与分类服务
+ */
 @Service
 @RequiredArgsConstructor
 public class TaxDataLakeService {
@@ -33,14 +36,19 @@ public class TaxDataLakeService {
     @Value("${custom.platform.token.domain}")
     private String platformDomain;
 
+    /**
+     * 从数据湖拉取凭证数据，按科目分类后落地为5类DL文件
+     */
     public List<TaxFileRecord> pull(DataLakePullCommand command) {
         permissionService.checkCompanyAccess(command.getCompanyCode());
+        // 调用平台接口拉取会计凭证
         String reqUrl = platformDomain + String.format(
                 "/api/finance/electronicArchives/%s/%s/%s/0/5000",
                 command.getCompanyCode(), command.getFiscalYearPeriodStart(), command.getFiscalYearPeriodEnd());
         List<AccountingDocumentDTO> documents = platformRemote.fetchFromDataLake(
                 "FINANCE_ELECTRONICARCHIVES_SVC", reqUrl, AccountingDocumentDTO::fromPltData);
 
+        // 预置5类目标分类容器
         Map<FileCategoryEnum, List<AccountingDocumentDTO>> grouped = new EnumMap<>(FileCategoryEnum.class);
         grouped.put(FileCategoryEnum.DL_INCOME, new ArrayList<>());
         grouped.put(FileCategoryEnum.DL_OUTPUT, new ArrayList<>());
@@ -48,10 +56,12 @@ public class TaxDataLakeService {
         grouped.put(FileCategoryEnum.DL_INCOME_TAX, new ArrayList<>());
         grouped.put(FileCategoryEnum.DL_OTHER, new ArrayList<>());
 
+        // 按科目号做归类
         for (AccountingDocumentDTO dto : documents) {
             grouped.get(resolveCategory(dto.getAccount())).add(dto);
         }
 
+        // 每个分类生成CSV并登记文件记录（同键覆盖）
         List<TaxFileRecord> records = new ArrayList<>();
         for (Map.Entry<FileCategoryEnum, List<AccountingDocumentDTO>> entry : grouped.entrySet()) {
             byte[] bytes = toCsv(entry.getValue()).getBytes(StandardCharsets.UTF_8);
@@ -67,6 +77,9 @@ public class TaxDataLakeService {
         return records;
     }
 
+    /**
+     * 根据会计科目解析文件类别
+     */
     private static FileCategoryEnum resolveCategory(String account) {
         if (account == null) {
             return FileCategoryEnum.DL_OTHER;
@@ -86,6 +99,9 @@ public class TaxDataLakeService {
         return FileCategoryEnum.DL_OTHER;
     }
 
+    /**
+     * 简单CSV导出
+     */
     private static String toCsv(List<AccountingDocumentDTO> rows) {
         StringBuilder sb = new StringBuilder();
         sb.append("reference,fiscalYearPeriod,companyCode,account,debit,credit,itemText\n");
@@ -101,6 +117,9 @@ public class TaxDataLakeService {
         return sb.toString();
     }
 
+    /**
+     * CSV字段安全处理（逗号替换）
+     */
     private static String safe(String value) {
         if (value == null) {
             return "";

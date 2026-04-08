@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * 配置表统一服务（5张配置表）
+ */
 @Service
 @RequiredArgsConstructor
 public class TaxConfigService {
@@ -17,11 +20,17 @@ public class TaxConfigService {
     private final TaxVatBasicItemConfigMapper vatBasicItemConfigMapper;
     private final TaxVatSpecialItemConfigMapper vatSpecialItemConfigMapper;
 
+    /**
+     * 查询公司代码配置
+     */
     public List<TaxCompanyCodeConfig> listCompanyCodeConfig() {
         return companyCodeConfigMapper.selectList(new LambdaQueryWrapper<TaxCompanyCodeConfig>()
                 .eq(TaxCompanyCodeConfig::getIsDeleted, 0));
     }
 
+    /**
+     * 保存公司代码配置
+     */
     public TaxCompanyCodeConfig saveCompanyCodeConfig(TaxCompanyCodeConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || companyCodeConfigMapper.selectById(config.getId()) == null) {
@@ -32,6 +41,9 @@ public class TaxConfigService {
         return config;
     }
 
+    /**
+     * 删除公司代码配置（逻辑删除）
+     */
     public void deleteCompanyCodeConfig(Long id) {
         TaxCompanyCodeConfig config = companyCodeConfigMapper.selectById(id);
         if (config != null) {
@@ -40,6 +52,9 @@ public class TaxConfigService {
         }
     }
 
+    /**
+     * 查询税目配置（通用+公司覆盖）
+     */
     public List<TaxCategoryConfig> listCategoryConfig(String companyCode) {
         return categoryConfigMapper.selectList(new LambdaQueryWrapper<TaxCategoryConfig>()
                 .eq(TaxCategoryConfig::getIsDeleted, 0)
@@ -47,6 +62,9 @@ public class TaxConfigService {
                 .orderByAsc(TaxCategoryConfig::getSeqNo));
     }
 
+    /**
+     * 保存税目配置
+     */
     public TaxCategoryConfig saveCategoryConfig(TaxCategoryConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || categoryConfigMapper.selectById(config.getId()) == null) {
@@ -57,6 +75,9 @@ public class TaxConfigService {
         return config;
     }
 
+    /**
+     * 删除税目配置（逻辑删除）
+     */
     public void deleteCategoryConfig(Long id) {
         TaxCategoryConfig config = categoryConfigMapper.selectById(id);
         if (config != null) {
@@ -65,12 +86,18 @@ public class TaxConfigService {
         }
     }
 
+    /**
+     * 查询项目配置
+     */
     public List<TaxProjectConfig> listProjectConfig(String companyCode) {
         return projectConfigMapper.selectList(new LambdaQueryWrapper<TaxProjectConfig>()
                 .eq(TaxProjectConfig::getIsDeleted, 0)
                 .eq(companyCode != null, TaxProjectConfig::getCompanyCode, companyCode));
     }
 
+    /**
+     * 保存项目配置
+     */
     public TaxProjectConfig saveProjectConfig(TaxProjectConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || projectConfigMapper.selectById(config.getId()) == null) {
@@ -81,6 +108,9 @@ public class TaxConfigService {
         return config;
     }
 
+    /**
+     * 删除项目配置（逻辑删除）
+     */
     public void deleteProjectConfig(Long id) {
         TaxProjectConfig config = projectConfigMapper.selectById(id);
         if (config != null) {
@@ -89,6 +119,9 @@ public class TaxConfigService {
         }
     }
 
+    /**
+     * 查询增值税基础条目配置（通用+公司覆盖）
+     */
     public List<TaxVatBasicItemConfig> listVatBasicItemConfig(String companyCode) {
         return vatBasicItemConfigMapper.selectList(new LambdaQueryWrapper<TaxVatBasicItemConfig>()
                 .eq(TaxVatBasicItemConfig::getIsDeleted, 0)
@@ -96,6 +129,9 @@ public class TaxConfigService {
                 .orderByAsc(TaxVatBasicItemConfig::getItemSeq));
     }
 
+    /**
+     * 保存增值税基础条目配置
+     */
     public TaxVatBasicItemConfig saveVatBasicItemConfig(TaxVatBasicItemConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || vatBasicItemConfigMapper.selectById(config.getId()) == null) {
@@ -106,6 +142,9 @@ public class TaxConfigService {
         return config;
     }
 
+    /**
+     * 删除增值税基础条目配置（逻辑删除）
+     */
     public void deleteVatBasicItemConfig(Long id) {
         TaxVatBasicItemConfig config = vatBasicItemConfigMapper.selectById(id);
         if (config != null) {
@@ -114,6 +153,9 @@ public class TaxConfigService {
         }
     }
 
+    /**
+     * 查询增值税特殊条目配置
+     */
     public List<TaxVatSpecialItemConfig> listVatSpecialItemConfig(String companyCode) {
         return vatSpecialItemConfigMapper.selectList(new LambdaQueryWrapper<TaxVatSpecialItemConfig>()
                 .eq(TaxVatSpecialItemConfig::getIsDeleted, 0)
@@ -121,6 +163,9 @@ public class TaxConfigService {
                 .orderByAsc(TaxVatSpecialItemConfig::getItemSeq));
     }
 
+    /**
+     * 保存增值税特殊条目配置
+     */
     public TaxVatSpecialItemConfig saveVatSpecialItemConfig(TaxVatSpecialItemConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || vatSpecialItemConfigMapper.selectById(config.getId()) == null) {
@@ -131,6 +176,9 @@ public class TaxConfigService {
         return config;
     }
 
+    /**
+     * 删除增值税特殊条目配置（逻辑删除）
+     */
     public void deleteVatSpecialItemConfig(Long id) {
         TaxVatSpecialItemConfig config = vatSpecialItemConfigMapper.selectById(id);
         if (config != null) {

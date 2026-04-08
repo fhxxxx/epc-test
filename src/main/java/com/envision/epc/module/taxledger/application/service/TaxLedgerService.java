@@ -23,6 +23,9 @@ import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.*;
 
+/**
+ * 台账运行核心服务
+ */
 @Service
 @RequiredArgsConstructor
 public class TaxLedgerService {
@@ -35,12 +38,17 @@ public class TaxLedgerService {
     private final TaxLedgerExcelService excelService;
     private final TaxPermissionService permissionService;
 
+    /**
+     * 创建一次新的台账运行
+     */
     @Transactional(rollbackFor = Exception.class)
     public LedgerRunDetailDTO createRun(CreateLedgerRunCommand command) {
         permissionService.checkCompanyAccess(command.getCompanyCode());
+        // 获取（或创建）公司-月份主记录，并将旧的运行置为失效
         TaxLedgerRecord ledger = getOrCreateLedgerRecord(command.getCompanyCode(), command.getYearMonth());
         invalidateOldRuns(ledger.getId());
 
+        // 初始化运行记录
         TaxLedgerRun run = new TaxLedgerRun();
         run.setLedgerId(ledger.getId());
         run.setRunNo(nextRunNo(ledger.getId()));
@@ -60,11 +68,15 @@ public class TaxLedgerService {
         ledger.setStatusMsg("Run started");
         ledgerRecordMapper.updateById(ledger);
 
+        // 建立三批阶段并立即执行
         createStages(run.getId());
         executeRun(run);
         return getRunDetail(run.getId());
     }
 
+    /**
+     * 查询运行详情（含阶段和产物）
+     */
     public LedgerRunDetailDTO getRunDetail(Long runId) {
         TaxLedgerRun run = ledgerRunMapper.selectById(runId);
         if (run == null || run.getIsDeleted() == 1) {
@@ -83,6 +95,9 @@ public class TaxLedgerService {
         return LedgerRunDetailDTO.of(run, stages, artifacts);
     }
 
+    /**
+     * GATED模式人工确认后继续执行
+     */
     @Transactional(rollbackFor = Exception.class)
     public LedgerRunDetailDTO confirm(Long runId, ConfirmStageCommand command) {
         TaxLedgerRun run = ledgerRunMapper.selectById(runId);
@@ -99,11 +114,13 @@ public class TaxLedgerService {
         if (stage == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Stage not found");
         }
+        // 将阶段标记为已确认
         stage.setStatus(LedgerRunStageStatusEnum.CONFIRMED);
         stage.setConfirmUser(permissionService.currentUserCode());
         stage.setConfirmTime(LocalDateTime.now());
         stageMapper.updateById(stage);
 
+        // 将运行恢复为RUNNING并继续执行
         run.setStatus(LedgerRunStatusEnum.RUNNING);
         run.setCurrentBatch(command.getBatchNo());
         ledgerRunMapper.updateById(run);
@@ -111,6 +128,9 @@ public class TaxLedgerService {
         return getRunDetail(runId);
     }
 
+    /**
+     * 查询某公司某账期的运行历史
+     */
     public List<TaxLedgerRun> listRuns(String companyCode, String yearMonth) {
         permissionService.checkCompanyAccess(companyCode);
         TaxLedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRecord>()
@@ -126,6 +146,9 @@ public class TaxLedgerService {
                 .orderByDesc(TaxLedgerRun::getRunNo));
     }
 
+    /**
+     * 下载最终台账文件
+     */
     public void downloadFinalLedger(String companyCode, String yearMonth, HttpServletResponse response) throws IOException {
         permissionService.checkCompanyAccess(companyCode);
         TaxLedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRecord>()
@@ -142,12 +165,19 @@ public class TaxLedgerService {
         blobStorageRemote.loadStream(ledger.getBlobPath(), response.getOutputStream());
     }
 
+    /**
+     * 执行运行流程：
+     * 1) 批次1前置校验+快照
+     * 2) 批次2（GATED模式可暂停）
+     * 3) 批次3生成最终台账
+     */
     private void executeRun(TaxLedgerRun run) {
         TaxLedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
         List<TaxFileRecord> files = fileRecordMapper.selectList(new LambdaQueryWrapper<TaxFileRecord>()
                 .eq(TaxFileRecord::getIsDeleted, 0)
                 .eq(TaxFileRecord::getCompanyCode, ledger.getCompanyCode())
                 .eq(TaxFileRecord::getYearMonth, ledger.getYearMonth()));
+        // 收集输入文件类别用于前置校验
         Set<FileCategoryEnum> categories = new HashSet<>();
         files.forEach(item -> categories.add(item.getFileCategory()));
         try {
@@ -159,6 +189,7 @@ public class TaxLedgerService {
             }
 
             if (run.getCurrentBatch() <= 2) {
+                // GATED模式在进入批次2前暂停，等待人工确认
                 if (run.getModeSnapshot() == LedgerRunModeEnum.GATED && run.getStatus() != LedgerRunStatusEnum.PAUSED) {
                     markPaused(run, 2);
                     return;
@@ -169,6 +200,7 @@ public class TaxLedgerService {
             }
 
             if (run.getCurrentBatch() <= 3) {
+                // 生成最终Excel台账并上传
                 byte[] finalLedger = excelService.buildLedger(ledger.getCompanyCode(), ledger.getYearMonth(), files);
                 String blobPath = String.format("tax-ledger/%s/%s/final/%s",
                         ledger.getCompanyCode(), ledger.getYearMonth(), ledger.getLedgerName());
@@ -178,6 +210,7 @@ public class TaxLedgerService {
                 run.setCurrentBatch(4);
             }
 
+            // 全流程成功，更新run和ledger状态
             run.setStatus(LedgerRunStatusEnum.SUCCESS);
             run.setEndedAt(LocalDateTime.now());
             ledgerRunMapper.updateById(run);
@@ -188,6 +221,7 @@ public class TaxLedgerService {
             ledger.setBlobPath(String.format("tax-ledger/%s/%s/final/%s", ledger.getCompanyCode(), ledger.getYearMonth(), ledger.getLedgerName()));
             ledgerRecordMapper.updateById(ledger);
         } catch (Exception e) {
+            // 失败后保留已生成阶段产物，但run/ledger标记FAILED
             run.setStatus(LedgerRunStatusEnum.FAILED);
             run.setErrorCode("RUN_FAILED");
             run.setErrorMsg(e.getMessage());
@@ -200,6 +234,9 @@ public class TaxLedgerService {
         }
     }
 
+    /**
+     * 执行单个批次并落中间快照
+     */
     private void runBatch(TaxLedgerRun run, int batchNo, boolean success, String failedMsg) {
         TaxLedgerRunStage stage = getStage(run.getId(), batchNo);
         stage.setStatus(LedgerRunStageStatusEnum.RUNNING);
@@ -212,6 +249,7 @@ public class TaxLedgerService {
             stageMapper.updateById(stage);
             throw new BizException(ErrorCode.BAD_REQUEST, failedMsg);
         }
+        // 用文本快照模拟阶段产物，后续可替换为真实中间Excel
         byte[] snapshot = ("run=" + run.getId() + ",batch=" + batchNo + ",time=" + LocalDateTime.now()).getBytes(StandardCharsets.UTF_8);
         String path = String.format("tax-ledger/snapshots/run-%d/batch-%d.txt", run.getId(), batchNo);
         blobStorageRemote.upload(path, new ByteArrayInputStream(snapshot));
@@ -219,6 +257,9 @@ public class TaxLedgerService {
         successStage(run.getId(), batchNo);
     }
 
+    /**
+     * 标记阶段成功并写入统计
+     */
     private void successStage(Long runId, int batchNo) {
         TaxLedgerRunStage stage = getStage(runId, batchNo);
         stage.setStatus(LedgerRunStageStatusEnum.SUCCESS);
@@ -228,6 +269,9 @@ public class TaxLedgerService {
         stageMapper.updateById(stage);
     }
 
+    /**
+     * 将运行置为暂停
+     */
     private void markPaused(TaxLedgerRun run, int batchNo) {
         TaxLedgerRunStage stage = getStage(run.getId(), batchNo);
         stage.setStatus(LedgerRunStageStatusEnum.PENDING);
@@ -237,6 +281,9 @@ public class TaxLedgerService {
         ledgerRunMapper.updateById(run);
     }
 
+    /**
+     * 保存运行产物记录
+     */
     private void saveArtifact(Long runId, Integer batchNo, LedgerArtifactTypeEnum type, String name, String path, String checksum) {
         TaxLedgerRunArtifact artifact = new TaxLedgerRunArtifact();
         artifact.setRunId(runId);
@@ -249,6 +296,9 @@ public class TaxLedgerService {
         artifactMapper.insert(artifact);
     }
 
+    /**
+     * 按run+batch获取阶段记录
+     */
     private TaxLedgerRunStage getStage(Long runId, int batchNo) {
         TaxLedgerRunStage stage = stageMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRunStage>()
                 .eq(TaxLedgerRunStage::getRunId, runId)
@@ -260,6 +310,9 @@ public class TaxLedgerService {
         return stage;
     }
 
+    /**
+     * 计算SHA-256摘要
+     */
     private static String sha256(byte[] bytes) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -274,6 +327,9 @@ public class TaxLedgerService {
         }
     }
 
+    /**
+     * 获取或创建台账主记录
+     */
     private TaxLedgerRecord getOrCreateLedgerRecord(String companyCode, String yearMonth) {
         TaxLedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRecord>()
                 .eq(TaxLedgerRecord::getIsDeleted, 0)
@@ -294,6 +350,9 @@ public class TaxLedgerService {
         return ledger;
     }
 
+    /**
+     * 使旧运行失效，保证同公司同账期只对外暴露最新有效run
+     */
     private void invalidateOldRuns(Long ledgerId) {
         List<TaxLedgerRun> oldRuns = ledgerRunMapper.selectList(new LambdaQueryWrapper<TaxLedgerRun>()
                 .eq(TaxLedgerRun::getIsDeleted, 0)
@@ -306,6 +365,9 @@ public class TaxLedgerService {
         });
     }
 
+    /**
+     * 计算下一次运行序号
+     */
     private int nextRunNo(Long ledgerId) {
         TaxLedgerRun latest = ledgerRunMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRun>()
                 .eq(TaxLedgerRun::getIsDeleted, 0)
@@ -318,6 +380,9 @@ public class TaxLedgerService {
         return latest.getRunNo() + 1;
     }
 
+    /**
+     * 初始化三批阶段记录
+     */
     private void createStages(Long runId) {
         for (int batchNo = 1; batchNo <= 3; batchNo++) {
             TaxLedgerRunStage stage = new TaxLedgerRunStage();

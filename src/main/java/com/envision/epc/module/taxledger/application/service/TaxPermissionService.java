@@ -15,18 +15,27 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * 权限服务（超级管理员 + 公司级权限）
+ */
 @Service
 @RequiredArgsConstructor
 public class TaxPermissionService {
     private final TaxUserPermissionMapper permissionMapper;
     private final TaxLedgerProperties properties;
 
+    /**
+     * 按公司查询权限记录
+     */
     public List<TaxUserPermission> listByCompany(String companyCode) {
         return permissionMapper.selectList(new LambdaQueryWrapper<TaxUserPermission>()
                 .eq(TaxUserPermission::getIsDeleted, 0)
                 .eq(companyCode != null, TaxUserPermission::getCompanyCode, companyCode));
     }
 
+    /**
+     * 授权（同员工同公司先撤销再授权）
+     */
     public TaxUserPermission grant(GrantPermissionCommand command) {
         validate(command);
         revoke(command.getEmployeeId(), command.getCompanyCode());
@@ -42,6 +51,9 @@ public class TaxPermissionService {
         return permission;
     }
 
+    /**
+     * 撤销授权（逻辑删除）
+     */
     public void revoke(String employeeId, String companyCode) {
         List<TaxUserPermission> existed = permissionMapper.selectList(new LambdaQueryWrapper<TaxUserPermission>()
                 .eq(TaxUserPermission::getIsDeleted, 0)
@@ -53,6 +65,9 @@ public class TaxPermissionService {
         });
     }
 
+    /**
+     * 公司访问权限校验
+     */
     public void checkCompanyAccess(String companyCode) {
         if (isSuperAdmin(currentUserCode())) {
             return;
@@ -66,6 +81,9 @@ public class TaxPermissionService {
         }
     }
 
+    /**
+     * 是否超级管理员
+     */
     public boolean isSuperAdmin(String userCode) {
         if (userCode == null) {
             return false;
@@ -79,6 +97,9 @@ public class TaxPermissionService {
                 .eq(TaxUserPermission::getPermissionLevel, PermissionLevelEnum.SUPER_ADMIN)) > 0;
     }
 
+    /**
+     * 获取当前登录人工号；后台场景兜底system
+     */
     public String currentUserCode() {
         try {
             return SecurityUtils.getCurrentUserCode();
@@ -87,6 +108,9 @@ public class TaxPermissionService {
         }
     }
 
+    /**
+     * 授权命令合法性校验
+     */
     private static void validate(GrantPermissionCommand command) {
         if (command.getPermissionLevel() == PermissionLevelEnum.SUPER_ADMIN && command.getCompanyCode() != null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "SUPER_ADMIN must not bind company code");

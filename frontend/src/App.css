@@ -1,0 +1,174 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap");
+
+:root {
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --ink: #0f1828;
+  --muted: #6f7a90;
+  --line: #e4eaf3;
+  --brand: #0f3d8f;
+  --brand-soft: #eef4ff;
+  --accent: #2e7fff;
+  --radius: 14px;
+  --shadow: 0 8px 28px rgba(17, 37, 74, 0.06);
+}
+
+* {
+  font-family: "Manrope", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  background: linear-gradient(180deg, #f3f7fd 0%, #f8f9fc 30%, #f6f8fb 100%);
+  color: var(--ink);
+}
+
+.app-layout {
+  min-height: 100vh;
+  background: transparent;
+}
+
+.app-header {
+  height: 72px;
+  padding: 0 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(120deg, #061c44 0%, #0b2c66 45%, #0f3d8f 100%);
+  box-shadow: 0 6px 18px rgba(6, 28, 68, 0.2);
+}
+
+.brand-title {
+  color: #fff;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.4px;
+}
+
+.brand-subtitle {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+}
+
+.app-content {
+  padding: 24px;
+}
+
+.main-tabs > .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+
+.main-tabs .ant-tabs-tab {
+  font-weight: 600;
+}
+
+.soft-card.ant-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.soft-card .ant-card-head {
+  border-bottom: 1px solid #edf1f8;
+}
+
+.config-shell {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.config-left {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+}
+
+.left-title {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.left-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.left-menu-item {
+  border: 1px solid transparent;
+  background: #f8faff;
+  color: #1f2f4f;
+  border-radius: 10px;
+  padding: 11px 12px;
+  text-align: left;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.left-menu-item:hover {
+  border-color: #d4e2fb;
+  background: #f0f6ff;
+}
+
+.left-menu-item.active {
+  border-color: #b9d1ff;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.right-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+}
+
+.right-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #15233f;
+}
+
+.right-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.config-form-wrap {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid #dce7fb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
+}
+
+.ant-btn-primary {
+  background: linear-gradient(120deg, #2d70ff 0%, #2665e8 100%);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  font-weight: 700;
+  color: #1c2a49;
+  background: #f8faff;
+}
+
+@media (max-width: 960px) {
+  .config-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .config-left {
+    position: static;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+}

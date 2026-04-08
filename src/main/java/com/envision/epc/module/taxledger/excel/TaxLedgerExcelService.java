@@ -9,8 +9,14 @@ import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * 台账Excel生成服务（Aspose.Cells）
+ */
 @Service
 public class TaxLedgerExcelService {
+    /**
+     * 生成最终台账文件（当前为最小可运行模板版）
+     */
     public byte[] buildLedger(String companyCode, String yearMonth, List<TaxFileRecord> files) throws Exception {
         Workbook workbook = new Workbook();
         workbook.getWorksheets().get(0).setName("Summary");
@@ -25,6 +31,7 @@ public class TaxLedgerExcelService {
         summary.getCells().get("B5").putValue("Source");
         summary.getCells().get("C5").putValue("File Name");
 
+        // Summary页写入基本元信息和输入文件清单
         int row = 6;
         for (TaxFileRecord file : files) {
             summary.getCells().get(row, 0).putValue(file.getFileCategory().name());
@@ -33,6 +40,7 @@ public class TaxLedgerExcelService {
             row++;
         }
 
+        // 示例批次页（后续可替换为真实sheet生成逻辑）
         Worksheet stage1 = workbook.getWorksheets().add("Batch1_Direct");
         stage1.getCells().get("A1").putValue("Stage 1 direct sheets generated");
         Worksheet stage2 = workbook.getWorksheets().add("Batch2_Cumulative");

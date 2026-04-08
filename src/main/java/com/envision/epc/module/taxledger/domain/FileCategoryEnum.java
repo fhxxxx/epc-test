@@ -1,5 +1,8 @@
 package com.envision.epc.module.taxledger.domain;
 
+/**
+ * 文件类别枚举
+ */
 public enum FileCategoryEnum {
     BS,
     PL,
