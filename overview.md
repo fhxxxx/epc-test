@@ -21,6 +21,11 @@
 | 历史累积 | 台账支持月份间数据依赖，支持无限期历史留存 |
 | 权限控制 | 超级管理员+公司级权限的双层权限体系 |
 
+**V1上线策略补充**：
+- 交付顺序采用“后端核心能力优先、前端并行跟进、最后统一联调”。
+- 首版重点打通主链路：`上传/拉取 -> 校验 -> 生成 -> 下载`。
+- 生成失败采用“部分成功可见”策略：阶段产物可下载，但未完成关键批次时不发布最终台账。
+
 ### 1.3 技术栈
 
 | 层级 | 技术选型 |
@@ -29,7 +34,7 @@
 | 数据库 | MySQL |
 | 文件存储 | Azure Blob Storage（现成实现，本地仅存path） |
 | 认证 | Okta（现成实现） |
-| 前端 | 待定（Vue3/React均可，建议使用现有脚手架中的方案） |
+| 前端 | React + Ant Design + Vite |
 | Excel操作 | Aspose.Cells |
 
 ### 1.4 业务规模
@@ -83,7 +88,7 @@
 | `company` | 公司CRUD、公司配置 | `CompanyController`, `CompanyService` |
 | `file` | 文件上传、下载、Azure Blob管理 | `FileController`, `FileService`, `BlobStorageService` |
 | `datalake` | 数据湖API调用、科目拆分、Aspose模板填充/公式重算/Excel生成 | `DataLakeController`, `DataLakeService`, `AccountSplitService` |
-| `ledger` | 台账生成核心逻辑 | `LedgerController`, `LedgerService` |
+| `ledger` | 台账生成核心逻辑（run驱动，含重试/续跑/失效） | `LedgerController`, `LedgerService` |
 | `config` | 5张配置表的CRUD管理 | `ConfigController`, `ConfigService` |
 | `permission` | 权限管理（超管+公司级） | `PermissionController`, `PermissionService` |
 
@@ -418,6 +423,14 @@ VatSpecialItemConfig (N)
 **快照保留策略**：中间快照与最终快照永久保留（不做TTL清理）。
 
 **说明**：`t_ledger_record` 作为“主记录（ledger）”，仍保持 `UNIQUE(company_code, year_month)`；`t_ledger_run*` 用于记录每次运行、分批状态和快照。
+
+### 3.3 软删与唯一约束并存策略（实现补充）
+
+为避免“逻辑删除后重复创建同业务键”引发唯一键冲突，软删表建议采用“虚拟生成列 + 唯一索引”：
+
+- 原则：唯一性仅约束 `is_deleted=0` 的有效数据。
+- 方案：新增虚拟列 `uk_xxx_active = CASE WHEN is_deleted=0 THEN business_key ELSE NULL END`，并对虚拟列建唯一索引。
+- 适用：公司代码配置、文件唯一键、台账主记录唯一键、权限唯一键等软删表。
 ## 四、API接口设计
 
 ### 4.1 接口规范
@@ -426,8 +439,12 @@ VatSpecialItemConfig (N)
 |--------|------|
 | 基础路径 | `/api/v1/tax-ledger` |
 | 认证方式 | Okta Bearer Token（已有实现） |
-| 响应格式 | 统一JSON `{code, message, data}` |
+| 响应格式 | 统一JSON `{code, msg, data}` |
 | 分页 | `page`, `size` 参数，返回 `{list, total, page, size}` |
+
+**响应处理补充约束**：
+- 业务异常可能返回 HTTP 200，但 `code != 0`。
+- 前端必须按 `code` 判定成功失败，`code != 0` 时展示 `msg`，不得提示“操作成功”。
 
 ### 4.2 接口清单
 
@@ -530,37 +547,55 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | `/configs/company-code` | 查询公司代码配置表 | 所有已认证用户 |
-| POST | `/configs/company-code` | 新增公司代码配置 | SUPER_ADMIN |
-| PUT | `/configs/company-code/{id}` | 修改公司代码配置 | SUPER_ADMIN |
-| DELETE | `/configs/company-code/{id}` | 删除公司代码配置 | SUPER_ADMIN |
-| GET | `/configs/tax-category` | 查询税目配置表 | 所有已认证用户 |
-| POST | `/configs/tax-category` | 新增税目配置 | SUPER_ADMIN |
-| PUT | `/configs/tax-category/{id}` | 修改税目配置 | SUPER_ADMIN |
-| DELETE | `/configs/tax-category/{id}` | 删除税目配置 | SUPER_ADMIN |
-| GET | `/configs/project` | 查询项目配置表 | 所有已认证用户 |
-| POST | `/configs/project` | 新增项目配置 | SUPER_ADMIN |
-| PUT | `/configs/project/{id}` | 修改项目配置 | SUPER_ADMIN |
-| DELETE | `/configs/project/{id}` | 删除项目配置 | SUPER_ADMIN |
-| GET | `/configs/vat-basic-item` | 查询增值税变动表基础条目配置 | 所有已认证用户 |
-| POST | `/configs/vat-basic-item` | 新增增值税变动表基础条目配置 | SUPER_ADMIN |
-| PUT | `/configs/vat-basic-item/{id}` | 修改增值税变动表基础条目配置 | SUPER_ADMIN |
-| DELETE | `/configs/vat-basic-item/{id}` | 删除增值税变动表基础条目配置 | SUPER_ADMIN |
-| GET | `/configs/vat-special-item` | 查询增值税变动表特殊条目配置 | 所有已认证用户 |
-| POST | `/configs/vat-special-item` | 新增增值税变动表特殊条目配置 | SUPER_ADMIN |
-| PUT | `/configs/vat-special-item/{id}` | 修改增值税变动表特殊条目配置 | SUPER_ADMIN |
-| DELETE | `/configs/vat-special-item/{id}` | 删除增值税变动表特殊条目配置 | SUPER_ADMIN |
+| GET | `/tax-ledger/config/company-code` | 查询公司代码配置表 | 所有已认证用户 |
+| POST | `/tax-ledger/config/company-code` | 新增/更新公司代码配置 | SUPER_ADMIN |
+| DELETE | `/tax-ledger/config/company-code/{id}` | 删除公司代码配置 | SUPER_ADMIN |
+| GET | `/tax-ledger/config/category` | 查询税目配置表 | 所有已认证用户 |
+| POST | `/tax-ledger/config/category` | 新增/更新税目配置 | SUPER_ADMIN |
+| DELETE | `/tax-ledger/config/category/{id}` | 删除税目配置 | SUPER_ADMIN |
+| GET | `/tax-ledger/config/project` | 查询项目配置表 | 所有已认证用户 |
+| POST | `/tax-ledger/config/project` | 新增/更新项目配置 | SUPER_ADMIN |
+| DELETE | `/tax-ledger/config/project/{id}` | 删除项目配置 | SUPER_ADMIN |
+| GET | `/tax-ledger/config/vat-basic` | 查询增值税变动表基础条目配置 | 所有已认证用户 |
+| POST | `/tax-ledger/config/vat-basic` | 新增/更新增值税变动表基础条目配置 | SUPER_ADMIN |
+| DELETE | `/tax-ledger/config/vat-basic/{id}` | 删除增值税变动表基础条目配置 | SUPER_ADMIN |
+| GET | `/tax-ledger/config/vat-special` | 查询增值税变动表特殊条目配置 | 所有已认证用户 |
+| POST | `/tax-ledger/config/vat-special` | 新增/更新增值税变动表特殊条目配置 | SUPER_ADMIN |
+| DELETE | `/tax-ledger/config/vat-special/{id}` | 删除增值税变动表特殊条目配置 | SUPER_ADMIN |
+
+**读取优先级补充**：
+- `companyCode` 有值：返回“通用配置（company_code为空）+ 公司覆盖配置（company_code=指定公司）”。
+- `companyCode` 为空：返回全部未删除配置（用于配置总览与总数统计）。
 
 #### 4.2.7 权限管理模块
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | `/permissions/users` | 获取所有用户权限列表 | SUPER_ADMIN |
-| POST | `/permissions/super-admin` | 设置超级管理员 | SUPER_ADMIN |
-| DELETE | `/permissions/super-admin/{userId}` | 移除超级管理员 | SUPER_ADMIN |
-| GET | `/companies/{companyCode}/permissions/users` | 获取该公司用户权限列表 | 该公司ADMIN或SUPER_ADMIN |
-| POST | `/companies/{companyCode}/permissions` | 给公司用户赋权限 | 该公司ADMIN或SUPER_ADMIN |
-| DELETE | `/companies/{companyCode}/permissions/{permissionId}` | 移除公司用户权限 | 该公司ADMIN或SUPER_ADMIN |
+| GET | `/tax-ledger/permissions` | 获取权限列表（可按公司筛选） | SUPER_ADMIN/公司管理员 |
+| POST | `/tax-ledger/permissions` | 单条授权 | SUPER_ADMIN/公司管理员 |
+| POST | `/tax-ledger/permissions/batch` | 批量授权（一次提交多员工） | SUPER_ADMIN/公司管理员 |
+| DELETE | `/tax-ledger/permissions` | 撤销授权（按 employeeId + companyCode） | SUPER_ADMIN/公司管理员 |
+| GET | `/user/list` | 员工检索（姓名/工号/域账号） | 已认证用户 |
+
+**批量授权请求示例**：
+```json
+[
+  {
+    "userId": "zhangsan",
+    "userName": "张三",
+    "employeeId": "59930",
+    "permissionLevel": "COMPANY_USER",
+    "companyCode": "2320"
+  },
+  {
+    "userId": "lisi",
+    "userName": "李四",
+    "employeeId": "60218",
+    "permissionLevel": "COMPANY_USER",
+    "companyCode": "2320"
+  }
+]
+```
 
 ---
 
@@ -1138,6 +1173,12 @@ public enum AccountTypeEnum {
 - 列表页与详情页仅展示最新有效run，同时提供历史run入口（只读审计）。
 ### 6.7 配置管理页（仅SUPER_ADMIN）
 
+**交互补充规范（已联调验证）**：
+- 页面布局：左侧配置导航，右侧列表操作区（搜索/刷新/新增）。
+- 新增/编辑：使用独立弹窗（Modal）录入，不嵌入列表区域。
+- 删除操作：必须二次确认（Popconfirm），防止误操作。
+- 分页：展示总条数与页码，分页文案中文化（示例：`共X条`、`10/页`）。
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  配置管理                                    超级管理员   │
@@ -1161,6 +1202,13 @@ public enum AccountTypeEnum {
 ```
 
 ### 6.8 权限管理页
+
+**交互补充规范（已落地）**：
+- 主页面仅保留“添加权限”按钮，点击后弹出独立授权弹窗。
+- 员工选择使用可搜索下拉（调用 `/user/list`），支持多选员工。
+- 批量提交时调用 `/tax-ledger/permissions/batch`，一次完成同权限级别、同公司代码的多员工授权。
+- 权限级别展示中文标签：`超级管理员 / 公司管理员 / 公司用户`。
+- 权限列表右下角分页，展示总条数与每页条数中文文案。
 
 **超级管理员视图**：
 
@@ -1219,6 +1267,7 @@ SUPER_ADMIN（超级管理员）
 COMPANY_ADMIN（公司管理员）
 ├── 可访问指定公司
 ├── 可管理该公司下的用户权限
+├── 支持单条授权与批量授权（同公司范围）
 ├── 可上传/下载该公司文件
 ├── 可拉取数据湖、生成台账
 └── 不可修改配置表
@@ -1344,6 +1393,14 @@ tax-ledger/
 7. 校验通过 → 状态设为SUCCESS
    校验失败 → 状态设为FAILED，记录错误信息（含sheet、cell、errorCode）
 ```
+
+### 9.3 前后端错误协同约束（实施补充）
+
+- 后端返回契约：统一 `Echo{code,msg,data}`。
+- 前端判定规则：
+  - 仅 `code==0` 视为成功。
+  - `code!=0` 必须展示 `msg`，并阻断成功提示。
+- 稳定性要求：所有关键异步提交/删除操作必须 `try/catch`，避免 `Uncaught (in promise)` 导致页面卡死或静默失败。
 
 ---
 
@@ -1620,6 +1677,11 @@ workbook.save(outputPath);
    - 首先进行数据湖API联调测试
    - 确认数据格式、分页逻辑、错误码
    - 建立Mock数据用于开发环境测试
+
+5. **初始化与联调运维建议（补充）**
+   - 提供5张配置表初始化SQL（每表约20条），并按 company_code 维度保持关联一致。
+   - 初始化脚本需支持重复执行（避免唯一键冲突），建议先按业务键清理再插入。
+   - 前后端联调固定端口映射（示例：前端5173代理后端8088），并在调试结束后关闭临时端口进程。
 
 ### 12.3 开发顺序建议
 
@@ -1904,6 +1966,5 @@ public class PermissionInterceptor implements HandlerInterceptor {
 | 3 | 预开票收入计提冲回统计的详细逻辑 | ✅ 已确认 | 用户上传的文件，系统直接取用，无需计算 |
 | 4 | 1月份台账生成时上年度12月台账数据来源 | ✅ 已确认 | 系统不支持跨年数据处理，1月份期初留抵进项税取0 |
 | 5 | 台账Excel的具体格式/样式要求 | ✅ 已确认 | 需要与现有Excel模板格式完全一致 |
-
 
 

@@ -3,9 +3,12 @@ import {
   Button,
   Card,
   Col,
+  ConfigProvider,
   Form,
   Input,
   Layout,
+  Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -16,6 +19,7 @@ import {
   message,
   Typography
 } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import { PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
 import client from "./api/client";
 import "./App.css";
@@ -158,7 +162,7 @@ function CompanyPanel({ onSelectCompany }) {
 
   const load = async () => {
     try {
-      const { data } = await client.get("/tax-ledger/companies");
+      const { data } = await client.get("/tax-ledger/config/company-code");
       setRows(asArray(data));
     } catch {
       setRows([]);
@@ -175,10 +179,14 @@ function CompanyPanel({ onSelectCompany }) {
         form={form}
         layout="inline"
         onFinish={async (values) => {
-          await client.post("/tax-ledger/companies", values);
-          message.success("公司保存成功");
-          form.resetFields();
-          load();
+          try {
+            await client.post("/tax-ledger/config/company-code", values);
+            message.success("公司保存成功");
+            form.resetFields();
+            load();
+          } catch {
+            // 失败提示已由全局拦截器处理
+          }
         }}
       >
         <Form.Item name="companyCode" rules={[{ required: true, message: "请输入公司代码" }]}>
@@ -204,16 +212,25 @@ function CompanyPanel({ onSelectCompany }) {
             render: (_, row) => (
               <Space>
                 <Button onClick={() => onSelectCompany(row.companyCode)}>选择</Button>
-                <Button
-                  danger
-                  onClick={async () => {
-                    await client.delete(`/tax-ledger/companies/${row.id}`);
-                    message.success("公司删除成功");
-                    load();
+                <Popconfirm
+                  overlayClassName="pretty-popconfirm"
+                  title="确认删除该公司？"
+                  description={`公司代码：${row.companyCode}。删除后需重新创建才能恢复。`}
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={async () => {
+                    try {
+                      await client.delete(`/tax-ledger/config/company-code/${row.id}`);
+                      message.success("公司删除成功");
+                      load();
+                    } catch {
+                      // 失败提示已由全局拦截器处理
+                    }
                   }}
                 >
-                  删除
-                </Button>
+                  <Button danger>删除</Button>
+                </Popconfirm>
               </Space>
             )
           }
@@ -283,14 +300,18 @@ function FilePanel({ companyCode }) {
         </Upload>
         <Button
           onClick={async () => {
-            await client.post("/tax-ledger/datalake/pull", {
-              companyCode,
-              yearMonth,
-              fiscalYearPeriodStart: ymToFiscalPeriod(yearMonth),
-              fiscalYearPeriodEnd: ymToFiscalPeriod(yearMonth)
-            });
-            message.success("数据湖拉取完成");
-            load();
+            try {
+              await client.post("/tax-ledger/datalake/pull", {
+                companyCode,
+                yearMonth,
+                fiscalYearPeriodStart: ymToFiscalPeriod(yearMonth),
+                fiscalYearPeriodEnd: ymToFiscalPeriod(yearMonth)
+              });
+              message.success("数据湖拉取完成");
+              load();
+            } catch {
+              // 失败提示已由全局拦截器处理
+            }
           }}
         >
           拉取数据湖
@@ -355,9 +376,13 @@ function LedgerPanel({ companyCode }) {
         <Button
           type="primary"
           onClick={async () => {
-            await client.post("/tax-ledger/ledger/runs", { companyCode, yearMonth, mode });
-            message.success("已发起台账生成");
-            load();
+            try {
+              await client.post("/tax-ledger/ledger/runs", { companyCode, yearMonth, mode });
+              message.success("已发起台账生成");
+              load();
+            } catch {
+              // 失败提示已由全局拦截器处理
+            }
           }}
         >
           发起生成
@@ -388,7 +413,30 @@ function LedgerPanel({ companyCode }) {
 
 function PermissionPanel({ companyCode }) {
   const [rows, setRows] = useState([]);
+  const [pageCurrent, setPageCurrent] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [userOptions, setUserOptions] = useState([]);
+  const [userLoading, setUserLoading] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [userPool, setUserPool] = useState({});
+  const [companyOptions, setCompanyOptions] = useState([]);
+  const [companyLoading, setCompanyLoading] = useState(false);
   const [form] = Form.useForm();
+  const permissionLevel = Form.useWatch("permissionLevel", form);
+
+  const levelOptions = [
+    { value: "SUPER_ADMIN", label: "超级管理员" },
+    { value: "COMPANY_ADMIN", label: "公司管理员" },
+    { value: "COMPANY_USER", label: "公司用户" }
+  ];
+
+  const levelTextMap = {
+    SUPER_ADMIN: "超级管理员",
+    COMPANY_ADMIN: "公司管理员",
+    COMPANY_USER: "公司用户"
+  };
 
   const load = async () => {
     try {
@@ -400,48 +448,198 @@ function PermissionPanel({ companyCode }) {
     }
   };
 
+  const searchUser = async (keyword) => {
+    try {
+      setUserLoading(true);
+      const { data } = await client.get("/user/list", {
+        params: { username: keyword || "", pageNum: 1, pageSize: 20 }
+      });
+      const items = asArray(data?.items ?? data);
+      setUserOptions(items);
+      setUserPool((prev) => {
+        const next = { ...prev };
+        items.forEach((item) => {
+          if (item?.userCode) {
+            next[item.userCode] = item;
+          }
+        });
+        return next;
+      });
+    } catch {
+      setUserOptions([]);
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  const onOpenAddModal = () => {
+    setModalOpen(true);
+    setSelectedUsers([]);
+    form.resetFields();
+    if (companyCode) {
+      form.setFieldValue("companyCode", companyCode);
+    }
+    loadCompanyOptions();
+  };
+
+  const loadCompanyOptions = async (keyword = "") => {
+    try {
+      setCompanyLoading(true);
+      const { data } = await client.get("/tax-ledger/config/company-code");
+      const rows = asArray(data);
+      const filteredRows = keyword
+        ? rows.filter((item) => String(item?.companyCode ?? "").toLowerCase().includes(keyword.toLowerCase()))
+        : rows;
+      setCompanyOptions(
+        filteredRows.map((item) => ({
+          value: item.companyCode,
+          label: `${item.companyCode}${item.companyName ? ` - ${item.companyName}` : ""}`
+        }))
+      );
+    } catch {
+      setCompanyOptions([]);
+    } finally {
+      setCompanyLoading(false);
+    }
+  };
+
   useEffect(() => {
     load();
+    setPageCurrent(1);
   }, [companyCode]);
 
   return (
-    <Card title="权限管理" className="soft-card" extra={<Button onClick={load}>刷新</Button>}>
-      <Form
-        form={form}
-        layout="inline"
-        onFinish={async (values) => {
-          await client.post("/tax-ledger/permissions", values);
-          message.success("授权成功");
+    <Card
+      title="权限管理"
+      className="soft-card"
+      extra={(
+        <Space>
+          <Button onClick={load}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={onOpenAddModal}>添加权限</Button>
+        </Space>
+      )}
+    >
+      <Modal
+        title="添加权限"
+        open={modalOpen}
+        destroyOnHidden
+        forceRender
+        width={820}
+        onCancel={() => {
+          setModalOpen(false);
+          setSelectedUsers([]);
           form.resetFields();
-          load();
         }}
+        footer={null}
       >
-        <Form.Item name="userId" rules={[{ required: true, message: "请输入 userId" }]}>
-          <Input placeholder="userId" />
-        </Form.Item>
-        <Form.Item name="userName" rules={[{ required: true, message: "请输入 userName" }]}>
-          <Input placeholder="userName" />
-        </Form.Item>
-        <Form.Item name="employeeId" rules={[{ required: true, message: "请输入 employeeId" }]}>
-          <Input placeholder="employeeId" />
-        </Form.Item>
-        <Form.Item name="permissionLevel" rules={[{ required: true, message: "请选择权限级别" }]}>
-          <Select
-            style={{ width: 170 }}
-            options={[
-              { value: "SUPER_ADMIN", label: "SUPER_ADMIN" },
-              { value: "COMPANY_ADMIN", label: "COMPANY_ADMIN" },
-              { value: "COMPANY_USER", label: "COMPANY_USER" }
-            ]}
-          />
-        </Form.Item>
-        <Form.Item name="companyCode">
-          <Input placeholder="companyCode(超管可空)" />
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit">授权</Button>
-        </Form.Item>
-      </Form>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={async (values) => {
+            try {
+              setSubmitting(true);
+              if (!selectedUsers.length) {
+                message.warning("请至少选择一名员工");
+                return;
+              }
+              const permissionLevel = values.permissionLevel;
+              const companyCodeValue = permissionLevel === "SUPER_ADMIN" ? null : values.companyCode;
+              if (permissionLevel !== "SUPER_ADMIN" && !companyCodeValue) {
+                message.warning("公司级权限必须选择公司代码");
+                return;
+              }
+              const payload = selectedUsers.map((item) => ({
+                userId: item.account || item.userCode,
+                userName: item.username,
+                employeeId: item.userCode,
+                permissionLevel,
+                companyCode: companyCodeValue
+              }));
+              await client.post("/tax-ledger/permissions/batch", payload);
+              message.success(`批量授权成功，共 ${payload.length} 人`);
+              setModalOpen(false);
+              setSelectedUsers([]);
+              form.resetFields();
+              load();
+            } catch {
+              // 失败提示已由全局拦截器处理
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+        >
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                name="employeePick"
+                label="选择员工"
+                rules={[{ required: true, message: "请输入姓名/工号/域账号检索员工" }]}
+              >
+                <Select
+                  mode="multiple"
+                  showSearch
+                  allowClear
+                  placeholder="输入姓名/工号/域账号搜索员工"
+                  filterOption={false}
+                  loading={userLoading}
+                  onSearch={searchUser}
+                  onChange={(vals) => {
+                    const users = (vals || [])
+                      .map((val) => userPool[val])
+                      .filter(Boolean);
+                    setSelectedUsers(users);
+                  }}
+                  options={userOptions.map((item) => ({
+                    value: item.userCode,
+                    label: `${item.username}（${item.userCode} / ${item.account}）`
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item
+                name="permissionLevel"
+                label="权限级别"
+                rules={[{ required: true, message: "请选择权限级别" }]}
+              >
+                <Select options={levelOptions} placeholder="请选择级别" />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="companyCode" label="公司代码">
+                <Select
+                  showSearch
+                  allowClear
+                  placeholder="超级管理员可留空"
+                  loading={companyLoading}
+                  disabled={permissionLevel === "SUPER_ADMIN"}
+                  options={companyOptions}
+                  filterOption={false}
+                  onSearch={loadCompanyOptions}
+                  onOpenChange={(open) => {
+                    if (open) loadCompanyOptions();
+                  }}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Text type="secondary">支持多选员工后一次性授权；若存在重复记录，系统将按同员工同公司覆盖授权。</Text>
+          <div style={{ marginTop: 16 }}>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>确认</Button>
+              <Button
+                onClick={() => {
+                  setModalOpen(false);
+                  setSelectedUsers([]);
+                  form.resetFields();
+                }}
+              >
+                取消
+              </Button>
+            </Space>
+          </div>
+        </Form>
+      </Modal>
 
       <Table
         style={{ marginTop: 16 }}
@@ -450,26 +648,49 @@ function PermissionPanel({ companyCode }) {
         columns={[
           { title: "工号", dataIndex: "employeeId" },
           { title: "姓名", dataIndex: "userName" },
-          { title: "级别", dataIndex: "permissionLevel", render: (v) => <Tag>{v}</Tag> },
+          { title: "级别", dataIndex: "permissionLevel", render: (v) => <Tag>{levelTextMap[v] || v}</Tag> },
           { title: "公司代码", dataIndex: "companyCode" },
           {
             title: "操作",
             render: (_, row) => (
-              <Button
-                danger
-                onClick={async () => {
-                  await client.delete("/tax-ledger/permissions", {
-                    params: { employeeId: row.employeeId, companyCode: row.companyCode }
-                  });
-                  message.success("撤销成功");
-                  load();
+              <Popconfirm
+                overlayClassName="pretty-popconfirm"
+                title="确认撤销该权限？"
+                description={`将撤销员工 ${row.employeeId} 的权限绑定。`}
+                okText="确认撤销"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={async () => {
+                  try {
+                    await client.delete("/tax-ledger/permissions", {
+                      params: { employeeId: row.employeeId, companyCode: row.companyCode }
+                    });
+                    message.success("撤销成功");
+                    load();
+                  } catch {
+                    // 失败提示已由全局拦截器处理
+                  }
                 }}
               >
-                撤销
-              </Button>
+                <Button danger>撤销</Button>
+              </Popconfirm>
             )
           }
         ]}
+        pagination={{
+          current: pageCurrent,
+          pageSize,
+          total: rows.length,
+          showSizeChanger: true,
+          pageSizeOptions: ["10", "20", "50", "100"],
+          showTotal: (total) => `共 ${total} 条`,
+          locale: { items_per_page: "/页" },
+          onChange: (current, size) => {
+            setPageCurrent(current);
+            setPageSize(size);
+          },
+          position: ["bottomRight"]
+        }}
       />
     </Card>
   );
@@ -480,7 +701,12 @@ function ConfigPanel({ companyCode }) {
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null);
-  const [formVisible, setFormVisible] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [pageCurrent, setPageCurrent] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [companyOptions, setCompanyOptions] = useState([]);
+  const [companyLoading, setCompanyLoading] = useState(false);
   const [form] = Form.useForm();
 
   const activeMeta = useMemo(
@@ -500,10 +726,11 @@ function ConfigPanel({ companyCode }) {
 
   useEffect(() => {
     load();
-    setFormVisible(false);
+    setModalOpen(false);
     setEditing(null);
     form.resetFields();
     setQuery("");
+    setPageCurrent(1);
   }, [activeMeta.endpoint, companyCode]);
 
   const filteredRows = useMemo(() => {
@@ -527,32 +754,64 @@ function ConfigPanel({ companyCode }) {
               size="small"
               onClick={() => {
                 setEditing(row);
-                setFormVisible(true);
+                setModalOpen(true);
                 form.setFieldsValue(row);
+                if (activeMeta.key !== "company-code") {
+                  loadCompanyOptions();
+                }
               }}
             >
               编辑
             </Button>
-            <Button
-              danger
-              size="small"
-              onClick={async () => {
-                await client.delete(`${activeMeta.endpoint}/${row.id}`);
-                message.success("删除成功");
-                load();
-              }}
-            >
-              删除
-            </Button>
+            <Popconfirm
+              overlayClassName="pretty-popconfirm"
+              title={`确认删除该${activeMeta.label}？`}
+              description="删除后将立即生效，如需恢复请重新新增。"
+              okText="确认删除"
+              cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={async () => {
+                  try {
+                    await client.delete(`${activeMeta.endpoint}/${row.id}`);
+                    message.success("删除成功");
+                    load();
+                  } catch {
+                    // 失败提示已由全局拦截器处理
+                  }
+                }}
+              >
+              <Button danger size="small">删除</Button>
+            </Popconfirm>
           </Space>
         )
       }
     ];
   }, [activeMeta, form]);
 
+  const loadCompanyOptions = async (keyword = "") => {
+    try {
+      setCompanyLoading(true);
+      const { data } = await client.get("/tax-ledger/config/company-code");
+      const rows = asArray(data);
+      const filteredRows = keyword
+        ? rows.filter((item) => String(item?.companyCode ?? "").toLowerCase().includes(keyword.toLowerCase()))
+        : rows;
+      setCompanyOptions(
+        filteredRows.map((item) => ({
+          value: item.companyCode,
+          label: `${item.companyCode}${item.companyName ? ` - ${item.companyName}` : ""}`
+        }))
+      );
+    } catch {
+      setCompanyOptions([]);
+    } finally {
+      setCompanyLoading(false);
+    }
+  };
+
   return (
     <div className="config-shell">
-      <Card className="config-left soft-card" bordered={false}>
+      <Card className="config-left soft-card" variant="borderless">
         <Text className="left-title">配置导航</Text>
         <div className="left-menu">
           {CONFIG_META.map((item) => (
@@ -570,12 +829,11 @@ function ConfigPanel({ companyCode }) {
 
       <Card
         className="config-right soft-card"
-        bordered={false}
+        variant="borderless"
         title={
           <div className="right-title-row">
             <div>
               <div className="right-title">{activeMeta.label}</div>
-              <div className="right-subtitle">当前共 {filteredRows.length} 条记录</div>
             </div>
             <Space>
               <Input
@@ -592,8 +850,11 @@ function ConfigPanel({ companyCode }) {
                 icon={<PlusOutlined />}
                 onClick={() => {
                   setEditing(null);
-                  setFormVisible(true);
+                  setModalOpen(true);
                   form.resetFields();
+                  if (activeMeta.key !== "company-code") {
+                    loadCompanyOptions();
+                  }
                 }}
               >
                 新增
@@ -602,55 +863,101 @@ function ConfigPanel({ companyCode }) {
           </div>
         }
       >
-        {formVisible && (
-          <div className="config-form-wrap">
-            <Form
-              form={form}
-              layout="vertical"
-              onFinish={async (values) => {
+        <Modal
+          title={editing ? `编辑${activeMeta.label}` : `新增${activeMeta.label}`}
+          open={modalOpen}
+          destroyOnHidden
+          forceRender
+          width={920}
+          onCancel={() => {
+            setModalOpen(false);
+            setEditing(null);
+            form.resetFields();
+          }}
+          footer={null}
+        >
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={async (values) => {
+              try {
+                setSubmitting(true);
                 const payload = editing ? { ...editing, ...values } : values;
                 await client.post(activeMeta.endpoint, payload);
                 message.success(editing ? "更新成功" : "新增成功");
-                setFormVisible(false);
+                setModalOpen(false);
                 setEditing(null);
                 form.resetFields();
                 load();
-              }}
-            >
-              <Row gutter={12}>
-                {activeMeta.fields.map((f) => (
-                  <Col xs={24} sm={12} md={8} lg={6} key={f.name}>
-                    <Form.Item
-                      name={f.name}
-                      label={f.label}
-                      rules={f.required ? [{ required: true, message: `请输入${f.label}` }] : []}
-                    >
+              } catch {
+                // 失败提示已由全局拦截器处理
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+          >
+            <Row gutter={12}>
+              {activeMeta.fields.map((f) => (
+                <Col xs={24} sm={12} md={8} key={f.name}>
+                  <Form.Item
+                    name={f.name}
+                    label={f.label}
+                    rules={f.required ? [{ required: true, message: `${f.name === "companyCode" && activeMeta.key !== "company-code" ? "请选择" : "请输入"}${f.label}` }] : []}
+                  >
+                    {f.name === "companyCode" && activeMeta.key !== "company-code" ? (
+                      <Select
+                        showSearch
+                        allowClear
+                        placeholder={`请选择${f.label}`}
+                        loading={companyLoading}
+                        options={companyOptions}
+                        filterOption={false}
+                        onSearch={loadCompanyOptions}
+                        onOpenChange={(open) => {
+                          if (open) loadCompanyOptions();
+                        }}
+                      />
+                    ) : (
                       <Input placeholder={f.label} />
-                    </Form.Item>
-                  </Col>
-                ))}
-              </Row>
-              <Space>
-                <Button type="primary" htmlType="submit">保存</Button>
-                <Button
-                  onClick={() => {
-                    setFormVisible(false);
-                    setEditing(null);
-                    form.resetFields();
-                  }}
-                >
-                  取消
-                </Button>
-              </Space>
-            </Form>
-          </div>
-        )}
+                    )}
+                  </Form.Item>
+                </Col>
+              ))}
+            </Row>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>保存</Button>
+              <Button
+                onClick={() => {
+                  setModalOpen(false);
+                  setEditing(null);
+                  form.resetFields();
+                }}
+              >
+                取消
+              </Button>
+            </Space>
+          </Form>
+        </Modal>
 
         <Table
           rowKey="id"
           dataSource={Array.isArray(filteredRows) ? filteredRows : []}
           columns={columns}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
+          pagination={{
+            current: pageCurrent,
+            pageSize,
+            total: filteredRows.length,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            pageSizeOptions: ["10", "20", "50", "100"],
+            showTotal: (total) => `共 ${total} 条`,
+            locale: { items_per_page: "/页" },
+            onChange: (current, size) => {
+              setPageCurrent(current);
+              setPageSize(size);
+            },
+            position: ["bottomRight"]
+          }}
         />
       </Card>
     </div>
@@ -663,11 +970,25 @@ export default function App() {
   useEffect(() => {
     const id = client.interceptors.response.use(
       (resp) => {
-        resp.data = normalizePayload(resp.data);
+        const raw = resp.data;
+        if (raw && typeof raw === "object" && Object.prototype.hasOwnProperty.call(raw, "code")) {
+          const code = Number(raw.code);
+          if (!Number.isNaN(code) && code !== 0) {
+            message.error(raw.msg || "请求失败");
+            return Promise.reject({
+              response: { data: raw },
+              message: raw.msg || "请求失败"
+            });
+          }
+          resp.data = raw.data;
+          return resp;
+        }
+        const payload = normalizePayload(raw);
+        resp.data = payload;
         return resp;
       },
       (error) => {
-        const msg = error?.response?.data?.message || error?.message || "request failed";
+        const msg = error?.response?.data?.msg || error?.response?.data?.message || error?.message || "request failed";
         message.error(msg);
         return Promise.reject(error);
       }
@@ -687,16 +1008,18 @@ export default function App() {
   );
 
   return (
-    <Layout className="app-layout">
-      <Header className="app-header">
-        <div className="brand-title">EPC 进项税报表系统</div>
-        <div className="brand-subtitle">
-          {companyCode ? `当前公司：${companyCode}` : "请先在公司页选择目标公司"}
-        </div>
-      </Header>
-      <Content className="app-content">
-        <Tabs className="main-tabs" items={tabs} />
-      </Content>
-    </Layout>
+    <ConfigProvider locale={zhCN}>
+      <Layout className="app-layout">
+        <Header className="app-header">
+          <div className="brand-title">EPC 进项税报表系统</div>
+          <div className="brand-subtitle">
+            {companyCode ? `当前公司：${companyCode}` : "请先在公司页选择目标公司"}
+          </div>
+        </Header>
+        <Content className="app-content">
+          <Tabs className="main-tabs" items={tabs} />
+        </Content>
+      </Layout>
+    </ConfigProvider>
   );
 }

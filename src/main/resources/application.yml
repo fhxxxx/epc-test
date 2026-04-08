@@ -158,12 +158,12 @@ custom:
       scope: openid profile email https://graph.microsoft.com/User.Read
   platform:
     token:
-      app-id: yourappid
+      app-id: 49AC87C475DA4D54A3EE4A27EF1169CF
       grant-type: CREDENTIAL
-      app-secret: yoursecret
-      domain: https://platform-dev.envision-io.com
-      user-id: youruserid
-      app-name: yourapp
+      app-secret: /ODnn4H6=uo0%p?8;M+w
+      domain: https://platform.envision-io.com
+      user-id: SYS10470
+      app-name: sys.chatenv
   dify:
     endpoint: https://ai-agent-dev.envisioncn.com
     extract-key: app-3E3Mdr4jDemylrGeUSyD7V9l

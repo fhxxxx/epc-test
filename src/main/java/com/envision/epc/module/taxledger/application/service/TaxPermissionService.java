@@ -11,7 +11,10 @@ import com.envision.epc.module.taxledger.domain.TaxUserPermission;
 import com.envision.epc.module.taxledger.infrastructure.TaxUserPermissionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -49,6 +52,21 @@ public class TaxPermissionService {
         permission.setIsDeleted(0);
         permissionMapper.insert(permission);
         return permission;
+    }
+
+    /**
+     * 批量授权（事务内逐条授权）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<TaxUserPermission> grantBatch(List<GrantPermissionCommand> commands) {
+        if (CollectionUtils.isEmpty(commands)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "Grant list must not be empty");
+        }
+        List<TaxUserPermission> result = new ArrayList<>();
+        for (GrantPermissionCommand command : commands) {
+            result.add(grant(command));
+        }
+        return result;
     }
 
     /**

@@ -34,6 +34,14 @@ public class TaxPermissionController {
     }
 
     /**
+     * 批量授权
+     */
+    @PostMapping("/batch")
+    public List<TaxUserPermission> grantBatch(@RequestBody List<GrantPermissionCommand> commands) {
+        return permissionService.grantBatch(commands);
+    }
+
+    /**
      * 撤销授权
      */
     @DeleteMapping

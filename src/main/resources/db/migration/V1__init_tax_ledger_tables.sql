@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS t_tax_company (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_company_code (company_code)
+    uk_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_company_code (uk_company_code_active)
 );
 
 CREATE TABLE IF NOT EXISTS t_tax_file_record (
@@ -33,7 +34,11 @@ CREATE TABLE IF NOT EXISTS t_tax_file_record (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_file (company_code, `year_month`, file_category, file_source),
+    uk_file_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
+    uk_file_year_month_active VARCHAR(7) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN `year_month` ELSE NULL END) VIRTUAL,
+    uk_file_category_active VARCHAR(60) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN file_category ELSE NULL END) VIRTUAL,
+    uk_file_source_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN file_source ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_file (uk_file_company_code_active, uk_file_year_month_active, uk_file_category_active, uk_file_source_active),
     KEY idx_tax_file_company_month (company_code, `year_month`)
 );
 
@@ -55,7 +60,9 @@ CREATE TABLE IF NOT EXISTS t_tax_ledger_record (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_ledger_company_month (company_code, `year_month`),
+    uk_ledger_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
+    uk_ledger_year_month_active VARCHAR(7) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN `year_month` ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_ledger_company_month (uk_ledger_company_code_active, uk_ledger_year_month_active),
     KEY idx_tax_ledger_company_month (company_code, `year_month`)
 );
 
@@ -82,7 +89,9 @@ CREATE TABLE IF NOT EXISTS t_tax_ledger_run (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_ledger_run (ledger_id, run_no),
+    uk_run_ledger_id_active BIGINT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN ledger_id ELSE NULL END) VIRTUAL,
+    uk_run_no_active INT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN run_no ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_ledger_run (uk_run_ledger_id_active, uk_run_no_active),
     KEY idx_tax_ledger_run_status (status),
     KEY idx_tax_ledger_run_ledger (ledger_id)
 );
@@ -107,7 +116,9 @@ CREATE TABLE IF NOT EXISTS t_tax_ledger_run_stage (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_run_stage (run_id, batch_no),
+    uk_stage_run_id_active BIGINT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN run_id ELSE NULL END) VIRTUAL,
+    uk_stage_batch_no_active INT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN batch_no ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_run_stage (uk_stage_run_id_active, uk_stage_batch_no_active),
     KEY idx_tax_run_stage_status (status)
 );
 
@@ -144,7 +155,8 @@ CREATE TABLE IF NOT EXISTS t_tax_company_code_config (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_company_code_config (company_code)
+    uk_company_code_config_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_company_code_config (uk_company_code_config_active)
 );
 
 CREATE TABLE IF NOT EXISTS t_tax_category_config (
@@ -232,8 +244,12 @@ CREATE TABLE IF NOT EXISTS t_tax_user_permission (
     update_by VARCHAR(100) NULL,
     update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_tax_permission_user_company_level (user_id, company_code, permission_level),
-    UNIQUE KEY uk_tax_permission_employee_company (employee_id, company_code),
+    uk_permission_user_id_active VARCHAR(100) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN user_id ELSE NULL END) VIRTUAL,
+    uk_permission_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
+    uk_permission_level_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN permission_level ELSE NULL END) VIRTUAL,
+    uk_permission_employee_id_active VARCHAR(50) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN employee_id ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_tax_permission_user_company_level (uk_permission_user_id_active, uk_permission_company_code_active, uk_permission_level_active),
+    UNIQUE KEY uk_tax_permission_employee_company (uk_permission_employee_id_active, uk_permission_company_code_active),
     KEY idx_tax_permission_user (user_id),
     KEY idx_tax_permission_company (company_code)
 );

@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/tax-ledger": "http://localhost:8088"
+      "/tax-ledger": "http://localhost:8088",
+      "/user": "http://localhost:8088"
     }
   }
 });

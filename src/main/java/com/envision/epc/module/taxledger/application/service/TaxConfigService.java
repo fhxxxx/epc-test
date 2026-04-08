@@ -5,6 +5,7 @@ import com.envision.epc.module.taxledger.domain.*;
 import com.envision.epc.module.taxledger.infrastructure.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -56,10 +57,14 @@ public class TaxConfigService {
      * 查询税目配置（通用+公司覆盖）
      */
     public List<TaxCategoryConfig> listCategoryConfig(String companyCode) {
-        return categoryConfigMapper.selectList(new LambdaQueryWrapper<TaxCategoryConfig>()
-                .eq(TaxCategoryConfig::getIsDeleted, 0)
-                .and(wrapper -> wrapper.isNull(TaxCategoryConfig::getCompanyCode).or().eq(TaxCategoryConfig::getCompanyCode, companyCode))
-                .orderByAsc(TaxCategoryConfig::getSeqNo));
+        LambdaQueryWrapper<TaxCategoryConfig> wrapper = new LambdaQueryWrapper<TaxCategoryConfig>()
+                .eq(TaxCategoryConfig::getIsDeleted, 0);
+        if (StringUtils.hasText(companyCode)) {
+            wrapper.and(w -> w.isNull(TaxCategoryConfig::getCompanyCode)
+                    .or().eq(TaxCategoryConfig::getCompanyCode, companyCode));
+        }
+        wrapper.orderByAsc(TaxCategoryConfig::getSeqNo);
+        return categoryConfigMapper.selectList(wrapper);
     }
 
     /**
@@ -92,7 +97,7 @@ public class TaxConfigService {
     public List<TaxProjectConfig> listProjectConfig(String companyCode) {
         return projectConfigMapper.selectList(new LambdaQueryWrapper<TaxProjectConfig>()
                 .eq(TaxProjectConfig::getIsDeleted, 0)
-                .eq(companyCode != null, TaxProjectConfig::getCompanyCode, companyCode));
+                .eq(StringUtils.hasText(companyCode), TaxProjectConfig::getCompanyCode, companyCode));
     }
 
     /**
@@ -123,10 +128,14 @@ public class TaxConfigService {
      * 查询增值税基础条目配置（通用+公司覆盖）
      */
     public List<TaxVatBasicItemConfig> listVatBasicItemConfig(String companyCode) {
-        return vatBasicItemConfigMapper.selectList(new LambdaQueryWrapper<TaxVatBasicItemConfig>()
-                .eq(TaxVatBasicItemConfig::getIsDeleted, 0)
-                .and(wrapper -> wrapper.isNull(TaxVatBasicItemConfig::getCompanyCode).or().eq(TaxVatBasicItemConfig::getCompanyCode, companyCode))
-                .orderByAsc(TaxVatBasicItemConfig::getItemSeq));
+        LambdaQueryWrapper<TaxVatBasicItemConfig> wrapper = new LambdaQueryWrapper<TaxVatBasicItemConfig>()
+                .eq(TaxVatBasicItemConfig::getIsDeleted, 0);
+        if (StringUtils.hasText(companyCode)) {
+            wrapper.and(w -> w.isNull(TaxVatBasicItemConfig::getCompanyCode)
+                    .or().eq(TaxVatBasicItemConfig::getCompanyCode, companyCode));
+        }
+        wrapper.orderByAsc(TaxVatBasicItemConfig::getItemSeq);
+        return vatBasicItemConfigMapper.selectList(wrapper);
     }
 
     /**
@@ -159,7 +168,7 @@ public class TaxConfigService {
     public List<TaxVatSpecialItemConfig> listVatSpecialItemConfig(String companyCode) {
         return vatSpecialItemConfigMapper.selectList(new LambdaQueryWrapper<TaxVatSpecialItemConfig>()
                 .eq(TaxVatSpecialItemConfig::getIsDeleted, 0)
-                .eq(companyCode != null, TaxVatSpecialItemConfig::getCompanyCode, companyCode)
+                .eq(StringUtils.hasText(companyCode), TaxVatSpecialItemConfig::getCompanyCode, companyCode)
                 .orderByAsc(TaxVatSpecialItemConfig::getItemSeq));
     }
 

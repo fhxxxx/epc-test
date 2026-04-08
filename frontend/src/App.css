@@ -159,6 +159,27 @@ body {
   background: #f8faff;
 }
 
+.pretty-popconfirm .ant-popover-inner {
+  border-radius: 14px;
+  border: 1px solid #d8e4fb;
+  box-shadow: 0 16px 36px rgba(15, 38, 82, 0.16);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.pretty-popconfirm .ant-popconfirm-title {
+  color: #11284f;
+  font-weight: 700;
+}
+
+.pretty-popconfirm .ant-popconfirm-description {
+  color: #5b6a86;
+}
+
+.pretty-popconfirm .ant-btn-default {
+  border-color: #cedcf8;
+  color: #2a4476;
+}
+
 @media (max-width: 960px) {
   .config-shell {
     grid-template-columns: 1fr;
