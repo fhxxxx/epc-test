@@ -14,17 +14,17 @@ import com.envision.epc.module.taxledger.domain.LedgerRunModeEnum;
 import com.envision.epc.module.taxledger.domain.LedgerRunStageStatusEnum;
 import com.envision.epc.module.taxledger.domain.LedgerRunStatusEnum;
 import com.envision.epc.module.taxledger.domain.LedgerRunTriggerEnum;
-import com.envision.epc.module.taxledger.domain.TaxFileRecord;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRecord;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRun;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRunArtifact;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRunStage;
+import com.envision.epc.module.taxledger.domain.FileRecord;
+import com.envision.epc.module.taxledger.domain.LedgerRecord;
+import com.envision.epc.module.taxledger.domain.LedgerRun;
+import com.envision.epc.module.taxledger.domain.LedgerRunArtifact;
+import com.envision.epc.module.taxledger.domain.LedgerRunStage;
 import com.envision.epc.module.taxledger.excel.TaxLedgerExcelService;
-import com.envision.epc.module.taxledger.infrastructure.TaxFileRecordMapper;
-import com.envision.epc.module.taxledger.infrastructure.TaxLedgerRecordMapper;
-import com.envision.epc.module.taxledger.infrastructure.TaxLedgerRunArtifactMapper;
-import com.envision.epc.module.taxledger.infrastructure.TaxLedgerRunMapper;
-import com.envision.epc.module.taxledger.infrastructure.TaxLedgerRunStageMapper;
+import com.envision.epc.module.taxledger.infrastructure.FileRecordMapper;
+import com.envision.epc.module.taxledger.infrastructure.LedgerRecordMapper;
+import com.envision.epc.module.taxledger.infrastructure.LedgerRunArtifactMapper;
+import com.envision.epc.module.taxledger.infrastructure.LedgerRunMapper;
+import com.envision.epc.module.taxledger.infrastructure.LedgerRunStageMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -48,14 +48,14 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class TaxLedgerService {
-    private final TaxLedgerRecordMapper ledgerRecordMapper;
-    private final TaxLedgerRunMapper ledgerRunMapper;
-    private final TaxLedgerRunStageMapper stageMapper;
-    private final TaxLedgerRunArtifactMapper artifactMapper;
-    private final TaxFileRecordMapper fileRecordMapper;
+    private final LedgerRecordMapper ledgerRecordMapper;
+    private final LedgerRunMapper ledgerRunMapper;
+    private final LedgerRunStageMapper stageMapper;
+    private final LedgerRunArtifactMapper artifactMapper;
+    private final FileRecordMapper fileRecordMapper;
     private final BlobStorageRemote blobStorageRemote;
     private final TaxLedgerExcelService excelService;
-    private final TaxPermissionService permissionService;
+    private final PermissionService permissionService;
 
     /**
      * 创建新运行
@@ -64,10 +64,10 @@ public class TaxLedgerService {
     public LedgerRunDetailDTO createRun(CreateLedgerRunCommand command) {
         permissionService.checkCompanyAccess(command.getCompanyCode());
 
-        TaxLedgerRecord ledger = getOrCreateLedgerRecord(command.getCompanyCode(), command.getYearMonth());
+        LedgerRecord ledger = getOrCreateLedgerRecord(command.getCompanyCode(), command.getYearMonth());
         invalidateOldRuns(ledger.getId());
 
-        TaxLedgerRun run = new TaxLedgerRun();
+        LedgerRun run = new LedgerRun();
         run.setLedgerId(ledger.getId());
         run.setRunNo(nextRunNo(ledger.getId()));
         run.setTriggerType(LedgerRunTriggerEnum.MANUAL);
@@ -92,23 +92,23 @@ public class TaxLedgerService {
      * 查询运行详情
      */
     public LedgerRunDetailDTO getRunDetail(Long runId) {
-        TaxLedgerRun run = ledgerRunMapper.selectById(runId);
+        LedgerRun run = ledgerRunMapper.selectById(runId);
         if (run == null || run.getIsDeleted() == 1) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Run not found");
         }
 
-        TaxLedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
+        LedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
         permissionService.checkCompanyAccess(ledger.getCompanyCode());
 
-        List<TaxLedgerRunStage> stages = stageMapper.selectList(new LambdaQueryWrapper<TaxLedgerRunStage>()
-                .eq(TaxLedgerRunStage::getIsDeleted, 0)
-                .eq(TaxLedgerRunStage::getRunId, runId)
-                .orderByAsc(TaxLedgerRunStage::getBatchNo));
+        List<LedgerRunStage> stages = stageMapper.selectList(new LambdaQueryWrapper<LedgerRunStage>()
+                .eq(LedgerRunStage::getIsDeleted, 0)
+                .eq(LedgerRunStage::getRunId, runId)
+                .orderByAsc(LedgerRunStage::getBatchNo));
 
-        List<TaxLedgerRunArtifact> artifacts = artifactMapper.selectList(new LambdaQueryWrapper<TaxLedgerRunArtifact>()
-                .eq(TaxLedgerRunArtifact::getIsDeleted, 0)
-                .eq(TaxLedgerRunArtifact::getRunId, runId)
-                .orderByAsc(TaxLedgerRunArtifact::getBatchNo));
+        List<LedgerRunArtifact> artifacts = artifactMapper.selectList(new LambdaQueryWrapper<LedgerRunArtifact>()
+                .eq(LedgerRunArtifact::getIsDeleted, 0)
+                .eq(LedgerRunArtifact::getRunId, runId)
+                .orderByAsc(LedgerRunArtifact::getBatchNo));
 
         return LedgerRunDetailDTO.of(run, stages, artifacts);
     }
@@ -118,7 +118,7 @@ public class TaxLedgerService {
      */
     @Transactional(rollbackFor = Exception.class)
     public LedgerRunDetailDTO confirm(Long runId, ConfirmStageCommand command) {
-        TaxLedgerRun run = ledgerRunMapper.selectById(runId);
+        LedgerRun run = ledgerRunMapper.selectById(runId);
         if (run == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Run not found");
         }
@@ -126,10 +126,10 @@ public class TaxLedgerService {
             throw new BizException(ErrorCode.BAD_REQUEST, "Run is not paused");
         }
 
-        TaxLedgerRunStage stage = stageMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRunStage>()
-                .eq(TaxLedgerRunStage::getIsDeleted, 0)
-                .eq(TaxLedgerRunStage::getRunId, runId)
-                .eq(TaxLedgerRunStage::getBatchNo, command.getBatchNo()));
+        LedgerRunStage stage = stageMapper.selectOne(new LambdaQueryWrapper<LedgerRunStage>()
+                .eq(LedgerRunStage::getIsDeleted, 0)
+                .eq(LedgerRunStage::getRunId, runId)
+                .eq(LedgerRunStage::getBatchNo, command.getBatchNo()));
         if (stage == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Stage not found");
         }
@@ -150,20 +150,20 @@ public class TaxLedgerService {
     /**
      * 查询运行历史
      */
-    public List<TaxLedgerRun> listRuns(String companyCode, String yearMonth) {
+    public List<LedgerRun> listRuns(String companyCode, String yearMonth) {
         permissionService.checkCompanyAccess(companyCode);
-        TaxLedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRecord>()
-                .eq(TaxLedgerRecord::getIsDeleted, 0)
-                .eq(TaxLedgerRecord::getCompanyCode, companyCode)
-                .eq(TaxLedgerRecord::getYearMonth, yearMonth));
+        LedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<LedgerRecord>()
+                .eq(LedgerRecord::getIsDeleted, 0)
+                .eq(LedgerRecord::getCompanyCode, companyCode)
+                .eq(LedgerRecord::getYearMonth, yearMonth));
         if (ledger == null) {
             return Collections.emptyList();
         }
 
-        return ledgerRunMapper.selectList(new LambdaQueryWrapper<TaxLedgerRun>()
-                .eq(TaxLedgerRun::getIsDeleted, 0)
-                .eq(TaxLedgerRun::getLedgerId, ledger.getId())
-                .orderByDesc(TaxLedgerRun::getRunNo));
+        return ledgerRunMapper.selectList(new LambdaQueryWrapper<LedgerRun>()
+                .eq(LedgerRun::getIsDeleted, 0)
+                .eq(LedgerRun::getLedgerId, ledger.getId())
+                .orderByDesc(LedgerRun::getRunNo));
     }
 
     /**
@@ -171,10 +171,10 @@ public class TaxLedgerService {
      */
     public void downloadFinalLedger(String companyCode, String yearMonth, HttpServletResponse response) throws IOException {
         permissionService.checkCompanyAccess(companyCode);
-        TaxLedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRecord>()
-                .eq(TaxLedgerRecord::getIsDeleted, 0)
-                .eq(TaxLedgerRecord::getCompanyCode, companyCode)
-                .eq(TaxLedgerRecord::getYearMonth, yearMonth));
+        LedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<LedgerRecord>()
+                .eq(LedgerRecord::getIsDeleted, 0)
+                .eq(LedgerRecord::getCompanyCode, companyCode)
+                .eq(LedgerRecord::getYearMonth, yearMonth));
         if (ledger == null || ledger.getBlobPath() == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Final ledger is not available");
         }
@@ -186,12 +186,12 @@ public class TaxLedgerService {
         blobStorageRemote.loadStream(ledger.getBlobPath(), response.getOutputStream());
     }
 
-    private void executeRun(TaxLedgerRun run) {
-        TaxLedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
-        List<TaxFileRecord> files = fileRecordMapper.selectList(new LambdaQueryWrapper<TaxFileRecord>()
-                .eq(TaxFileRecord::getIsDeleted, 0)
-                .eq(TaxFileRecord::getCompanyCode, ledger.getCompanyCode())
-                .eq(TaxFileRecord::getYearMonth, ledger.getYearMonth()));
+    private void executeRun(LedgerRun run) {
+        LedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
+        List<FileRecord> files = fileRecordMapper.selectList(new LambdaQueryWrapper<FileRecord>()
+                .eq(FileRecord::getIsDeleted, 0)
+                .eq(FileRecord::getCompanyCode, ledger.getCompanyCode())
+                .eq(FileRecord::getYearMonth, ledger.getYearMonth()));
 
         Set<FileCategoryEnum> categories = new HashSet<>();
         files.forEach(item -> categories.add(item.getFileCategory()));
@@ -248,8 +248,8 @@ public class TaxLedgerService {
         }
     }
 
-    private void runBatch(TaxLedgerRun run, int batchNo, boolean success, String failedMsg) {
-        TaxLedgerRunStage stage = getStage(run.getId(), batchNo);
+    private void runBatch(LedgerRun run, int batchNo, boolean success, String failedMsg) {
+        LedgerRunStage stage = getStage(run.getId(), batchNo);
         stage.setStatus(LedgerRunStageStatusEnum.RUNNING);
         stage.setStartedAt(LocalDateTime.now());
         stageMapper.updateById(stage);
@@ -272,7 +272,7 @@ public class TaxLedgerService {
     }
 
     private void successStage(Long runId, int batchNo) {
-        TaxLedgerRunStage stage = getStage(runId, batchNo);
+        LedgerRunStage stage = getStage(runId, batchNo);
         stage.setStatus(LedgerRunStageStatusEnum.SUCCESS);
         stage.setSheetCountTotal(1);
         stage.setSheetCountSuccess(1);
@@ -280,8 +280,8 @@ public class TaxLedgerService {
         stageMapper.updateById(stage);
     }
 
-    private void markPaused(TaxLedgerRun run, int batchNo) {
-        TaxLedgerRunStage stage = getStage(run.getId(), batchNo);
+    private void markPaused(LedgerRun run, int batchNo) {
+        LedgerRunStage stage = getStage(run.getId(), batchNo);
         stage.setStatus(LedgerRunStageStatusEnum.PENDING);
         stageMapper.updateById(stage);
 
@@ -297,7 +297,7 @@ public class TaxLedgerService {
                               String path,
                               Long fileSize,
                               String checksum) {
-        TaxLedgerRunArtifact artifact = new TaxLedgerRunArtifact();
+        LedgerRunArtifact artifact = new LedgerRunArtifact();
         artifact.setRunId(runId);
         artifact.setBatchNo(batchNo);
         artifact.setArtifactType(type);
@@ -310,11 +310,11 @@ public class TaxLedgerService {
         artifactMapper.insert(artifact);
     }
 
-    private TaxLedgerRunStage getStage(Long runId, int batchNo) {
-        TaxLedgerRunStage stage = stageMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRunStage>()
-                .eq(TaxLedgerRunStage::getRunId, runId)
-                .eq(TaxLedgerRunStage::getBatchNo, batchNo)
-                .eq(TaxLedgerRunStage::getIsDeleted, 0));
+    private LedgerRunStage getStage(Long runId, int batchNo) {
+        LedgerRunStage stage = stageMapper.selectOne(new LambdaQueryWrapper<LedgerRunStage>()
+                .eq(LedgerRunStage::getRunId, runId)
+                .eq(LedgerRunStage::getBatchNo, batchNo)
+                .eq(LedgerRunStage::getIsDeleted, 0));
         if (stage == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Stage not found: " + batchNo);
         }
@@ -335,16 +335,16 @@ public class TaxLedgerService {
         }
     }
 
-    private TaxLedgerRecord getOrCreateLedgerRecord(String companyCode, String yearMonth) {
-        TaxLedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRecord>()
-                .eq(TaxLedgerRecord::getIsDeleted, 0)
-                .eq(TaxLedgerRecord::getCompanyCode, companyCode)
-                .eq(TaxLedgerRecord::getYearMonth, yearMonth));
+    private LedgerRecord getOrCreateLedgerRecord(String companyCode, String yearMonth) {
+        LedgerRecord ledger = ledgerRecordMapper.selectOne(new LambdaQueryWrapper<LedgerRecord>()
+                .eq(LedgerRecord::getIsDeleted, 0)
+                .eq(LedgerRecord::getCompanyCode, companyCode)
+                .eq(LedgerRecord::getYearMonth, yearMonth));
         if (ledger != null) {
             return ledger;
         }
 
-        ledger = new TaxLedgerRecord();
+        ledger = new LedgerRecord();
         ledger.setCompanyCode(companyCode);
         ledger.setYearMonth(yearMonth);
         ledger.setLedgerName(companyCode + "-" + yearMonth + "-tax-ledger.xlsx");
@@ -357,10 +357,10 @@ public class TaxLedgerService {
     }
 
     private void invalidateOldRuns(Long ledgerId) {
-        List<TaxLedgerRun> oldRuns = ledgerRunMapper.selectList(new LambdaQueryWrapper<TaxLedgerRun>()
-                .eq(TaxLedgerRun::getIsDeleted, 0)
-                .eq(TaxLedgerRun::getLedgerId, ledgerId)
-                .in(TaxLedgerRun::getStatus,
+        List<LedgerRun> oldRuns = ledgerRunMapper.selectList(new LambdaQueryWrapper<LedgerRun>()
+                .eq(LedgerRun::getIsDeleted, 0)
+                .eq(LedgerRun::getLedgerId, ledgerId)
+                .in(LedgerRun::getStatus,
                         LedgerRunStatusEnum.PENDING,
                         LedgerRunStatusEnum.RUNNING,
                         LedgerRunStatusEnum.PAUSED));
@@ -373,10 +373,10 @@ public class TaxLedgerService {
     }
 
     private int nextRunNo(Long ledgerId) {
-        TaxLedgerRun latest = ledgerRunMapper.selectOne(new LambdaQueryWrapper<TaxLedgerRun>()
-                .eq(TaxLedgerRun::getIsDeleted, 0)
-                .eq(TaxLedgerRun::getLedgerId, ledgerId)
-                .orderByDesc(TaxLedgerRun::getRunNo)
+        LedgerRun latest = ledgerRunMapper.selectOne(new LambdaQueryWrapper<LedgerRun>()
+                .eq(LedgerRun::getIsDeleted, 0)
+                .eq(LedgerRun::getLedgerId, ledgerId)
+                .orderByDesc(LedgerRun::getRunNo)
                 .last("LIMIT 1"));
         if (latest == null) {
             return 1;
@@ -386,7 +386,7 @@ public class TaxLedgerService {
 
     private void createStages(Long runId) {
         for (int batchNo = 1; batchNo <= 3; batchNo++) {
-            TaxLedgerRunStage stage = new TaxLedgerRunStage();
+            LedgerRunStage stage = new LedgerRunStage();
             stage.setRunId(runId);
             stage.setBatchNo(batchNo);
             stage.setStatus(LedgerRunStageStatusEnum.PENDING);

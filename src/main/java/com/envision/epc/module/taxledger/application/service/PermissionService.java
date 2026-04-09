@@ -6,8 +6,8 @@ import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.infrastructure.security.SecurityUtils;
 import com.envision.epc.module.taxledger.application.command.GrantPermissionCommand;
 import com.envision.epc.module.taxledger.common.TaxLedgerProperties;
-import com.envision.epc.module.taxledger.domain.TaxUserPermission;
-import com.envision.epc.module.taxledger.infrastructure.TaxUserPermissionMapper;
+import com.envision.epc.module.taxledger.domain.UserPermission;
+import com.envision.epc.module.taxledger.infrastructure.UserPermissionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,30 +22,30 @@ import java.util.List;
  */
 @Service
 @RequiredArgsConstructor
-public class TaxPermissionService {
+public class PermissionService {
     private static final String TEMP_BYPASS_USER_CODE = "EX413903";
     private static final String TEMP_BYPASS_ACCOUNT = "gangxiang.guan";
 
-    private final TaxUserPermissionMapper permissionMapper;
+    private final UserPermissionMapper permissionMapper;
     private final TaxLedgerProperties properties;
 
     /**
      * 按公司查询权限记录
      */
-    public List<TaxUserPermission> listByCompany(String companyCode) {
-        return permissionMapper.selectList(new LambdaQueryWrapper<TaxUserPermission>()
-                .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(StringUtils.hasText(companyCode), TaxUserPermission::getCompanyCode, companyCode));
+    public List<UserPermission> listByCompany(String companyCode) {
+        return permissionMapper.selectList(new LambdaQueryWrapper<UserPermission>()
+                .eq(UserPermission::getIsDeleted, 0)
+                .eq(StringUtils.hasText(companyCode), UserPermission::getCompanyCode, companyCode));
     }
 
     /**
      * 授权（同用户同公司先撤销再授权）
      */
-    public TaxUserPermission grant(GrantPermissionCommand command) {
+    public UserPermission grant(GrantPermissionCommand command) {
         validate(command);
         revoke(command.getUserId(), command.getCompanyCode());
 
-        TaxUserPermission permission = new TaxUserPermission();
+        UserPermission permission = new UserPermission();
         permission.setUserId(command.getUserId());
         permission.setUserName(command.getUserName());
         permission.setCompanyCode(command.getCompanyCode());
@@ -58,11 +58,11 @@ public class TaxPermissionService {
      * 批量授权
      */
     @Transactional(rollbackFor = Exception.class)
-    public List<TaxUserPermission> grantBatch(List<GrantPermissionCommand> commands) {
+    public List<UserPermission> grantBatch(List<GrantPermissionCommand> commands) {
         if (CollectionUtils.isEmpty(commands)) {
             throw new BizException(ErrorCode.BAD_REQUEST, "Grant list must not be empty");
         }
-        List<TaxUserPermission> result = new ArrayList<>();
+        List<UserPermission> result = new ArrayList<>();
         for (GrantPermissionCommand command : commands) {
             result.add(grant(command));
         }
@@ -77,10 +77,10 @@ public class TaxPermissionService {
             throw new BizException(ErrorCode.BAD_REQUEST, "userId and companyCode are required");
         }
 
-        List<TaxUserPermission> existed = permissionMapper.selectList(new LambdaQueryWrapper<TaxUserPermission>()
-                .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(TaxUserPermission::getUserId, userId)
-                .eq(TaxUserPermission::getCompanyCode, companyCode));
+        List<UserPermission> existed = permissionMapper.selectList(new LambdaQueryWrapper<UserPermission>()
+                .eq(UserPermission::getIsDeleted, 0)
+                .eq(UserPermission::getUserId, userId)
+                .eq(UserPermission::getCompanyCode, companyCode));
 
         existed.forEach(item -> {
             item.setIsDeleted(1);
@@ -100,10 +100,10 @@ public class TaxPermissionService {
             return;
         }
 
-        boolean hasAccess = permissionMapper.selectCount(new LambdaQueryWrapper<TaxUserPermission>()
-                .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(TaxUserPermission::getUserId, currentUserCode)
-                .eq(TaxUserPermission::getCompanyCode, companyCode)) > 0;
+        boolean hasAccess = permissionMapper.selectCount(new LambdaQueryWrapper<UserPermission>()
+                .eq(UserPermission::getIsDeleted, 0)
+                .eq(UserPermission::getUserId, currentUserCode)
+                .eq(UserPermission::getCompanyCode, companyCode)) > 0;
         if (!hasAccess) {
             throw new BizException(ErrorCode.AUTH_ACCESS_DENIED, "No permission for company " + companyCode);
         }

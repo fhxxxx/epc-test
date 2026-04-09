@@ -11,7 +11,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("t_company_code_config")
-public class TaxCompanyCodeConfig extends AuditingEntity {
+public class CompanyCodeConfig extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;
     /** 公司名称 */

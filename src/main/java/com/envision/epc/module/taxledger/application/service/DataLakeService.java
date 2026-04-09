@@ -5,7 +5,7 @@ import com.envision.epc.facade.platform.PlatformRemote;
 import com.envision.epc.module.extract.application.dtos.AccountingDocumentDTO;
 import com.envision.epc.module.taxledger.application.command.DataLakePullCommand;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
-import com.envision.epc.module.taxledger.domain.TaxFileRecord;
+import com.envision.epc.module.taxledger.domain.FileRecord;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -25,13 +25,13 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
-public class TaxDataLakeService {
+public class DataLakeService {
     private static final DateTimeFormatter TS_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final PlatformRemote platformRemote;
     private final BlobStorageRemote blobStorageRemote;
-    private final TaxPermissionService permissionService;
-    private final TaxFileService fileService;
+    private final PermissionService permissionService;
+    private final FileService fileService;
 
     @Value("${custom.platform.token.domain}")
     private String platformDomain;
@@ -39,7 +39,7 @@ public class TaxDataLakeService {
     /**
      * 拉取并按规则生成 5 类 DL 文件
      */
-    public List<TaxFileRecord> pull(DataLakePullCommand command) {
+    public List<FileRecord> pull(DataLakePullCommand command) {
         permissionService.checkCompanyAccess(command.getCompanyCode());
 
         String reqUrl = platformDomain + String.format(
@@ -60,7 +60,7 @@ public class TaxDataLakeService {
             grouped.get(resolveCategory(dto.getAccount())).add(dto);
         }
 
-        List<TaxFileRecord> records = new ArrayList<>();
+        List<FileRecord> records = new ArrayList<>();
         for (Map.Entry<FileCategoryEnum, List<AccountingDocumentDTO>> entry : grouped.entrySet()) {
             byte[] bytes = toCsv(entry.getValue()).getBytes(StandardCharsets.UTF_8);
             String blobPath = String.format("tax-ledger/%s/%s/%s/%s_%s.csv",
@@ -68,7 +68,7 @@ public class TaxDataLakeService {
                     LocalDateTime.now().format(TS_FORMATTER), UUID.randomUUID());
             blobStorageRemote.upload(blobPath, new ByteArrayInputStream(bytes));
 
-            TaxFileRecord record = fileService.saveOrReplace(
+            FileRecord record = fileService.saveOrReplace(
                     command.getCompanyCode(),
                     command.getYearMonth(),
                     entry.getKey().name() + ".csv",

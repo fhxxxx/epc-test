@@ -6,13 +6,15 @@ import com.envision.epc.infrastructure.mybatis.AuditingEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
- * 税务文件记录
+ * 台账主记录（公司+月份）
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_file_record")
-public class TaxFileRecord extends AuditingEntity {
+@TableName("t_ledger_record")
+public class LedgerRecord extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;
 
@@ -20,17 +22,23 @@ public class TaxFileRecord extends AuditingEntity {
     @TableField("`year_month`")
     private String yearMonth;
 
-    /** 文件名 */
-    private String fileName;
+    /** 台账文件名 */
+    private String ledgerName;
 
-    /** 文件类别 */
-    private FileCategoryEnum fileCategory;
-
-    /** Blob 存储路径 */
+    /** 最终台账 Blob 路径 */
     private String blobPath;
 
-    /** 文件大小（字节） */
-    private Long fileSize;
+    /** 生成人工号 */
+    private String generateUser;
+
+    /** 生成状态 */
+    private LedgerGenerateStatusEnum generateStatus;
+
+    /** 状态描述 */
+    private String statusMsg;
+
+    /** 生成时间 */
+    private LocalDateTime generatedAt;
 
     /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;

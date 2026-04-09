@@ -6,23 +6,20 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 增值税特殊条目配置
+ * 用户公司权限映射
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_vat_special_item_config")
-public class TaxVatSpecialItemConfig extends AuditingEntity {
-    /** 条目序号 */
-    private Integer itemSeq;
+@TableName("t_user_permission")
+public class UserPermission extends AuditingEntity {
+    /** 用户标识（对应 sys_user.user_code） */
+    private String userId;
+
+    /** 用户名称（对应 sys_user.username） */
+    private String userName;
 
     /** 公司代码 */
     private String companyCode;
-
-    /** 特殊条目 */
-    private String specialItem;
-
-    /** 是否展示（Y/N） */
-    private String isDisplay;
 
     /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;

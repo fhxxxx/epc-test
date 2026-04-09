@@ -1,8 +1,8 @@
 package com.envision.epc.module.taxledger.web;
 
-import com.envision.epc.module.taxledger.application.service.TaxFileService;
+import com.envision.epc.module.taxledger.application.service.FileService;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
-import com.envision.epc.module.taxledger.domain.TaxFileRecord;
+import com.envision.epc.module.taxledger.domain.FileRecord;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -18,16 +18,16 @@ import java.util.List;
 @RequiredArgsConstructor
 @RequestMapping("/tax-ledger/files")
 public class TaxFileController {
-    private final TaxFileService fileService;
+    private final FileService fileService;
 
     /**
      * 上传文件
      */
     @PostMapping("/upload")
-    public TaxFileRecord upload(@RequestParam String companyCode,
-                                @RequestParam String yearMonth,
-                                @RequestParam FileCategoryEnum fileCategory,
-                                @RequestPart MultipartFile file) throws IOException {
+    public FileRecord upload(@RequestParam String companyCode,
+                             @RequestParam String yearMonth,
+                             @RequestParam FileCategoryEnum fileCategory,
+                             @RequestPart MultipartFile file) throws IOException {
         return fileService.upload(companyCode, yearMonth, fileCategory, file);
     }
 
@@ -35,7 +35,7 @@ public class TaxFileController {
      * 查询文件列表
      */
     @GetMapping
-    public List<TaxFileRecord> list(@RequestParam String companyCode, @RequestParam String yearMonth) {
+    public List<FileRecord> list(@RequestParam String companyCode, @RequestParam String yearMonth) {
         return fileService.list(companyCode, yearMonth);
     }
 

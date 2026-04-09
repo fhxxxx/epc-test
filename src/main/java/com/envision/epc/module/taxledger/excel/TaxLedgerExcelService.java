@@ -2,7 +2,7 @@ package com.envision.epc.module.taxledger.excel;
 
 import com.aspose.cells.Workbook;
 import com.aspose.cells.Worksheet;
-import com.envision.epc.module.taxledger.domain.TaxFileRecord;
+import com.envision.epc.module.taxledger.domain.FileRecord;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -17,7 +17,7 @@ public class TaxLedgerExcelService {
     /**
      * 生成最终台账（V1 最小可运行版）
      */
-    public byte[] buildLedger(String companyCode, String yearMonth, List<TaxFileRecord> files) throws Exception {
+    public byte[] buildLedger(String companyCode, String yearMonth, List<FileRecord> files) throws Exception {
         Workbook workbook = new Workbook();
         workbook.getWorksheets().get(0).setName("Summary");
         Worksheet summary = workbook.getWorksheets().get("Summary");
@@ -34,7 +34,7 @@ public class TaxLedgerExcelService {
         summary.getCells().get("C5").putValue("File Size");
 
         int row = 6;
-        for (TaxFileRecord file : files) {
+        for (FileRecord file : files) {
             summary.getCells().get(row, 0).putValue(file.getFileCategory().name());
             summary.getCells().get(row, 1).putValue(file.getFileName());
             summary.getCells().get(row, 2).putValue(file.getFileSize() == null ? 0 : file.getFileSize());

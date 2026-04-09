@@ -1,6 +1,6 @@
 package com.envision.epc.module.taxledger.web;
 
-import com.envision.epc.module.taxledger.application.service.TaxConfigService;
+import com.envision.epc.module.taxledger.application.service.ConfigService;
 import com.envision.epc.module.taxledger.domain.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -13,14 +13,14 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/tax-ledger/config")
-public class TaxConfigController {
-    private final TaxConfigService configService;
+public class ConfigController {
+    private final ConfigService configService;
 
     /**
      * 查询公司代码配置
      */
     @GetMapping("/company-code")
-    public List<TaxCompanyCodeConfig> listCompanyCodeConfig() {
+    public List<CompanyCodeConfig> listCompanyCodeConfig() {
         return configService.listCompanyCodeConfig();
     }
 
@@ -28,7 +28,7 @@ public class TaxConfigController {
      * 保存公司代码配置
      */
     @PostMapping("/company-code")
-    public TaxCompanyCodeConfig saveCompanyCodeConfig(@RequestBody TaxCompanyCodeConfig command) {
+    public CompanyCodeConfig saveCompanyCodeConfig(@RequestBody CompanyCodeConfig command) {
         return configService.saveCompanyCodeConfig(command);
     }
 
@@ -68,7 +68,7 @@ public class TaxConfigController {
      * 查询项目配置
      */
     @GetMapping("/project")
-    public List<TaxProjectConfig> listProjectConfig(@RequestParam(required = false) String companyCode) {
+    public List<ProjectConfig> listProjectConfig(@RequestParam(required = false) String companyCode) {
         return configService.listProjectConfig(companyCode);
     }
 
@@ -76,7 +76,7 @@ public class TaxConfigController {
      * 保存项目配置
      */
     @PostMapping("/project")
-    public TaxProjectConfig saveProjectConfig(@RequestBody TaxProjectConfig command) {
+    public ProjectConfig saveProjectConfig(@RequestBody ProjectConfig command) {
         return configService.saveProjectConfig(command);
     }
 
@@ -92,7 +92,7 @@ public class TaxConfigController {
      * 查询增值税基础条目配置
      */
     @GetMapping("/vat-basic")
-    public List<TaxVatBasicItemConfig> listVatBasicConfig(@RequestParam(required = false) String companyCode) {
+    public List<VatBasicItemConfig> listVatBasicConfig(@RequestParam(required = false) String companyCode) {
         return configService.listVatBasicItemConfig(companyCode);
     }
 
@@ -100,7 +100,7 @@ public class TaxConfigController {
      * 保存增值税基础条目配置
      */
     @PostMapping("/vat-basic")
-    public TaxVatBasicItemConfig saveVatBasicConfig(@RequestBody TaxVatBasicItemConfig command) {
+    public VatBasicItemConfig saveVatBasicConfig(@RequestBody VatBasicItemConfig command) {
         return configService.saveVatBasicItemConfig(command);
     }
 
@@ -116,7 +116,7 @@ public class TaxConfigController {
      * 查询增值税特殊条目配置
      */
     @GetMapping("/vat-special")
-    public List<TaxVatSpecialItemConfig> listVatSpecialConfig(@RequestParam(required = false) String companyCode) {
+    public List<VatSpecialItemConfig> listVatSpecialConfig(@RequestParam(required = false) String companyCode) {
         return configService.listVatSpecialItemConfig(companyCode);
     }
 
@@ -124,7 +124,7 @@ public class TaxConfigController {
      * 保存增值税特殊条目配置
      */
     @PostMapping("/vat-special")
-    public TaxVatSpecialItemConfig saveVatSpecialConfig(@RequestBody TaxVatSpecialItemConfig command) {
+    public VatSpecialItemConfig saveVatSpecialConfig(@RequestBody VatSpecialItemConfig command) {
         return configService.saveVatSpecialItemConfig(command);
     }
 

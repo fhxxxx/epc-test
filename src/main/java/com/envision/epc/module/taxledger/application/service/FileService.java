@@ -5,8 +5,8 @@ import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
-import com.envision.epc.module.taxledger.domain.TaxFileRecord;
-import com.envision.epc.module.taxledger.infrastructure.TaxFileRecordMapper;
+import com.envision.epc.module.taxledger.domain.FileRecord;
+import com.envision.epc.module.taxledger.infrastructure.FileRecordMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,17 +26,17 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
-public class TaxFileService {
+public class FileService {
     private static final DateTimeFormatter TS_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final BlobStorageRemote blobStorageRemote;
-    private final TaxFileRecordMapper fileRecordMapper;
-    private final TaxPermissionService permissionService;
+    private final FileRecordMapper fileRecordMapper;
+    private final PermissionService permissionService;
 
     /**
      * 上传文件
      */
-    public TaxFileRecord upload(String companyCode, String yearMonth, FileCategoryEnum category, MultipartFile file) throws IOException {
+    public FileRecord upload(String companyCode, String yearMonth, FileCategoryEnum category, MultipartFile file) throws IOException {
         permissionService.checkCompanyAccess(companyCode);
         if (file == null || file.isEmpty()) {
             throw new BizException(ErrorCode.BAD_REQUEST, "empty file");
@@ -57,24 +57,24 @@ public class TaxFileService {
     /**
      * 同公司+账期+类别覆盖保存（旧记录逻辑删除）
      */
-    public TaxFileRecord saveOrReplace(String companyCode,
-                                       String yearMonth,
-                                       String fileName,
-                                       FileCategoryEnum category,
-                                       String blobPath,
-                                       Long fileSize) {
-        List<TaxFileRecord> existed = fileRecordMapper.selectList(new LambdaQueryWrapper<TaxFileRecord>()
-                .eq(TaxFileRecord::getIsDeleted, 0)
-                .eq(TaxFileRecord::getCompanyCode, companyCode)
-                .eq(TaxFileRecord::getYearMonth, yearMonth)
-                .eq(TaxFileRecord::getFileCategory, category));
+    public FileRecord saveOrReplace(String companyCode,
+                                    String yearMonth,
+                                    String fileName,
+                                    FileCategoryEnum category,
+                                    String blobPath,
+                                    Long fileSize) {
+        List<FileRecord> existed = fileRecordMapper.selectList(new LambdaQueryWrapper<FileRecord>()
+                .eq(FileRecord::getIsDeleted, 0)
+                .eq(FileRecord::getCompanyCode, companyCode)
+                .eq(FileRecord::getYearMonth, yearMonth)
+                .eq(FileRecord::getFileCategory, category));
 
         existed.forEach(record -> {
             record.setIsDeleted(1);
             fileRecordMapper.updateById(record);
         });
 
-        TaxFileRecord record = new TaxFileRecord();
+        FileRecord record = new FileRecord();
         record.setCompanyCode(companyCode);
         record.setYearMonth(yearMonth);
         record.setFileName(fileName);
@@ -89,20 +89,20 @@ public class TaxFileService {
     /**
      * 列表查询
      */
-    public List<TaxFileRecord> list(String companyCode, String yearMonth) {
+    public List<FileRecord> list(String companyCode, String yearMonth) {
         permissionService.checkCompanyAccess(companyCode);
-        return fileRecordMapper.selectList(new LambdaQueryWrapper<TaxFileRecord>()
-                .eq(TaxFileRecord::getIsDeleted, 0)
-                .eq(TaxFileRecord::getCompanyCode, companyCode)
-                .eq(TaxFileRecord::getYearMonth, yearMonth)
-                .orderByDesc(TaxFileRecord::getCreateTime));
+        return fileRecordMapper.selectList(new LambdaQueryWrapper<FileRecord>()
+                .eq(FileRecord::getIsDeleted, 0)
+                .eq(FileRecord::getCompanyCode, companyCode)
+                .eq(FileRecord::getYearMonth, yearMonth)
+                .orderByDesc(FileRecord::getCreateTime));
     }
 
     /**
      * 下载文件
      */
     public void download(Long id, HttpServletResponse response) throws IOException {
-        TaxFileRecord record = fileRecordMapper.selectById(id);
+        FileRecord record = fileRecordMapper.selectById(id);
         if (record == null || record.getIsDeleted() == 1) {
             throw new BizException(ErrorCode.BAD_REQUEST, "File not found");
         }

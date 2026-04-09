@@ -11,7 +11,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("t_ledger_run_artifact")
-public class TaxLedgerRunArtifact extends AuditingEntity {
+public class LedgerRunArtifact extends AuditingEntity {
     /** 运行 ID */
     private Long runId;
 

@@ -1,8 +1,8 @@
 package com.envision.epc.module.taxledger.web;
 
 import com.envision.epc.module.taxledger.application.command.GrantPermissionCommand;
-import com.envision.epc.module.taxledger.application.service.TaxPermissionService;
-import com.envision.epc.module.taxledger.domain.TaxUserPermission;
+import com.envision.epc.module.taxledger.application.service.PermissionService;
+import com.envision.epc.module.taxledger.domain.UserPermission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -15,14 +15,14 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/tax-ledger/permissions")
-public class TaxPermissionController {
-    private final TaxPermissionService permissionService;
+public class PermissionController {
+    private final PermissionService permissionService;
 
     /**
      * 查询权限列表
      */
     @GetMapping
-    public List<TaxUserPermission> list(@RequestParam(required = false) String companyCode) {
+    public List<UserPermission> list(@RequestParam(required = false) String companyCode) {
         return permissionService.listByCompany(companyCode);
     }
 
@@ -30,7 +30,7 @@ public class TaxPermissionController {
      * 授权
      */
     @PostMapping
-    public TaxUserPermission grant(@RequestBody GrantPermissionCommand command) {
+    public UserPermission grant(@RequestBody GrantPermissionCommand command) {
         return permissionService.grant(command);
     }
 
@@ -38,7 +38,7 @@ public class TaxPermissionController {
      * 批量授权
      */
     @PostMapping("/batch")
-    public List<TaxUserPermission> grantBatch(@RequestBody List<GrantPermissionCommand> commands) {
+    public List<UserPermission> grantBatch(@RequestBody List<GrantPermissionCommand> commands) {
         return permissionService.grantBatch(commands);
     }
 

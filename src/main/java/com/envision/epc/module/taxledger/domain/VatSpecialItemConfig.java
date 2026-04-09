@@ -6,26 +6,23 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 项目配置
+ * 增值税特殊条目配置
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_project_config")
-public class TaxProjectConfig extends AuditingEntity {
+@TableName("t_vat_special_item_config")
+public class VatSpecialItemConfig extends AuditingEntity {
+    /** 条目序号 */
+    private Integer itemSeq;
+
     /** 公司代码 */
     private String companyCode;
 
-    /** 税种 */
-    private String taxType;
+    /** 特殊条目 */
+    private String specialItem;
 
-    /** 税目 */
-    private String taxCategory;
-
-    /** 项目名称 */
-    private String projectName;
-
-    /** 优惠期 */
-    private String preferentialPeriod;
+    /** 是否展示（Y/N） */
+    private String isDisplay;
 
     /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;

@@ -11,7 +11,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("t_vat_basic_item_config")
-public class TaxVatBasicItemConfig extends AuditingEntity {
+public class VatBasicItemConfig extends AuditingEntity {
     /** 条目序号 */
     private Integer itemSeq;
 

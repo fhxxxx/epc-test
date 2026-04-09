@@ -4,7 +4,7 @@ import com.envision.epc.module.taxledger.application.command.ConfirmStageCommand
 import com.envision.epc.module.taxledger.application.command.CreateLedgerRunCommand;
 import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
 import com.envision.epc.module.taxledger.application.service.TaxLedgerService;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRun;
+import com.envision.epc.module.taxledger.domain.LedgerRun;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -49,7 +49,7 @@ public class TaxLedgerController {
      * 查询某公司某账期运行历史
      */
     @GetMapping("/{companyCode}/{yearMonth}/runs")
-    public List<TaxLedgerRun> listRuns(@PathVariable String companyCode, @PathVariable String yearMonth) {
+    public List<LedgerRun> listRuns(@PathVariable String companyCode, @PathVariable String yearMonth) {
         return ledgerService.listRuns(companyCode, yearMonth);
     }
 

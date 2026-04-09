@@ -1,9 +1,9 @@
 package com.envision.epc.module.taxledger.application.dto;
 
 import com.envision.epc.module.taxledger.domain.LedgerRunStatusEnum;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRun;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRunArtifact;
-import com.envision.epc.module.taxledger.domain.TaxLedgerRunStage;
+import com.envision.epc.module.taxledger.domain.LedgerRun;
+import com.envision.epc.module.taxledger.domain.LedgerRunArtifact;
+import com.envision.epc.module.taxledger.domain.LedgerRunStage;
 import lombok.Data;
 
 import java.util.List;
@@ -44,16 +44,16 @@ public class LedgerRunDetailDTO {
     /**
      * 批次阶段明细
      */
-    private List<TaxLedgerRunStage> stages;
+    private List<LedgerRunStage> stages;
     /**
      * 本次运行产物清单
      */
-    private List<TaxLedgerRunArtifact> artifacts;
+    private List<LedgerRunArtifact> artifacts;
 
     /**
      * 构建详情DTO
      */
-    public static LedgerRunDetailDTO of(TaxLedgerRun run, List<TaxLedgerRunStage> stages, List<TaxLedgerRunArtifact> artifacts) {
+    public static LedgerRunDetailDTO of(LedgerRun run, List<LedgerRunStage> stages, List<LedgerRunArtifact> artifacts) {
         LedgerRunDetailDTO dto = new LedgerRunDetailDTO();
         dto.setRunId(run.getId());
         dto.setLedgerId(run.getLedgerId());

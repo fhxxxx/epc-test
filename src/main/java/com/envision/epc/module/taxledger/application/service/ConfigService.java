@@ -14,25 +14,25 @@ import java.util.List;
  */
 @Service
 @RequiredArgsConstructor
-public class TaxConfigService {
-    private final TaxCompanyCodeConfigMapper companyCodeConfigMapper;
+public class ConfigService {
+    private final CompanyCodeConfigMapper companyCodeConfigMapper;
     private final TaxCategoryConfigMapper categoryConfigMapper;
-    private final TaxProjectConfigMapper projectConfigMapper;
-    private final TaxVatBasicItemConfigMapper vatBasicItemConfigMapper;
-    private final TaxVatSpecialItemConfigMapper vatSpecialItemConfigMapper;
+    private final ProjectConfigMapper projectConfigMapper;
+    private final VatBasicItemConfigMapper vatBasicItemConfigMapper;
+    private final VatSpecialItemConfigMapper vatSpecialItemConfigMapper;
 
     /**
      * 查询公司代码配置
      */
-    public List<TaxCompanyCodeConfig> listCompanyCodeConfig() {
-        return companyCodeConfigMapper.selectList(new LambdaQueryWrapper<TaxCompanyCodeConfig>()
-                .eq(TaxCompanyCodeConfig::getIsDeleted, 0));
+    public List<CompanyCodeConfig> listCompanyCodeConfig() {
+        return companyCodeConfigMapper.selectList(new LambdaQueryWrapper<CompanyCodeConfig>()
+                .eq(CompanyCodeConfig::getIsDeleted, 0));
     }
 
     /**
      * 保存公司代码配置
      */
-    public TaxCompanyCodeConfig saveCompanyCodeConfig(TaxCompanyCodeConfig config) {
+    public CompanyCodeConfig saveCompanyCodeConfig(CompanyCodeConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || companyCodeConfigMapper.selectById(config.getId()) == null) {
             companyCodeConfigMapper.insert(config);
@@ -46,7 +46,7 @@ public class TaxConfigService {
      * 删除公司代码配置（逻辑删除）
      */
     public void deleteCompanyCodeConfig(Long id) {
-        TaxCompanyCodeConfig config = companyCodeConfigMapper.selectById(id);
+        CompanyCodeConfig config = companyCodeConfigMapper.selectById(id);
         if (config != null) {
             config.setIsDeleted(1);
             companyCodeConfigMapper.updateById(config);
@@ -94,16 +94,16 @@ public class TaxConfigService {
     /**
      * 查询项目配置
      */
-    public List<TaxProjectConfig> listProjectConfig(String companyCode) {
-        return projectConfigMapper.selectList(new LambdaQueryWrapper<TaxProjectConfig>()
-                .eq(TaxProjectConfig::getIsDeleted, 0)
-                .eq(StringUtils.hasText(companyCode), TaxProjectConfig::getCompanyCode, companyCode));
+    public List<ProjectConfig> listProjectConfig(String companyCode) {
+        return projectConfigMapper.selectList(new LambdaQueryWrapper<ProjectConfig>()
+                .eq(ProjectConfig::getIsDeleted, 0)
+                .eq(StringUtils.hasText(companyCode), ProjectConfig::getCompanyCode, companyCode));
     }
 
     /**
      * 保存项目配置
      */
-    public TaxProjectConfig saveProjectConfig(TaxProjectConfig config) {
+    public ProjectConfig saveProjectConfig(ProjectConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || projectConfigMapper.selectById(config.getId()) == null) {
             projectConfigMapper.insert(config);
@@ -117,7 +117,7 @@ public class TaxConfigService {
      * 删除项目配置（逻辑删除）
      */
     public void deleteProjectConfig(Long id) {
-        TaxProjectConfig config = projectConfigMapper.selectById(id);
+        ProjectConfig config = projectConfigMapper.selectById(id);
         if (config != null) {
             config.setIsDeleted(1);
             projectConfigMapper.updateById(config);
@@ -127,21 +127,21 @@ public class TaxConfigService {
     /**
      * 查询增值税基础条目配置（通用+公司覆盖）
      */
-    public List<TaxVatBasicItemConfig> listVatBasicItemConfig(String companyCode) {
-        LambdaQueryWrapper<TaxVatBasicItemConfig> wrapper = new LambdaQueryWrapper<TaxVatBasicItemConfig>()
-                .eq(TaxVatBasicItemConfig::getIsDeleted, 0);
+    public List<VatBasicItemConfig> listVatBasicItemConfig(String companyCode) {
+        LambdaQueryWrapper<VatBasicItemConfig> wrapper = new LambdaQueryWrapper<VatBasicItemConfig>()
+                .eq(VatBasicItemConfig::getIsDeleted, 0);
         if (StringUtils.hasText(companyCode)) {
-            wrapper.and(w -> w.isNull(TaxVatBasicItemConfig::getCompanyCode)
-                    .or().eq(TaxVatBasicItemConfig::getCompanyCode, companyCode));
+            wrapper.and(w -> w.isNull(VatBasicItemConfig::getCompanyCode)
+                    .or().eq(VatBasicItemConfig::getCompanyCode, companyCode));
         }
-        wrapper.orderByAsc(TaxVatBasicItemConfig::getItemSeq);
+        wrapper.orderByAsc(VatBasicItemConfig::getItemSeq);
         return vatBasicItemConfigMapper.selectList(wrapper);
     }
 
     /**
      * 保存增值税基础条目配置
      */
-    public TaxVatBasicItemConfig saveVatBasicItemConfig(TaxVatBasicItemConfig config) {
+    public VatBasicItemConfig saveVatBasicItemConfig(VatBasicItemConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || vatBasicItemConfigMapper.selectById(config.getId()) == null) {
             vatBasicItemConfigMapper.insert(config);
@@ -155,7 +155,7 @@ public class TaxConfigService {
      * 删除增值税基础条目配置（逻辑删除）
      */
     public void deleteVatBasicItemConfig(Long id) {
-        TaxVatBasicItemConfig config = vatBasicItemConfigMapper.selectById(id);
+        VatBasicItemConfig config = vatBasicItemConfigMapper.selectById(id);
         if (config != null) {
             config.setIsDeleted(1);
             vatBasicItemConfigMapper.updateById(config);
@@ -165,17 +165,17 @@ public class TaxConfigService {
     /**
      * 查询增值税特殊条目配置
      */
-    public List<TaxVatSpecialItemConfig> listVatSpecialItemConfig(String companyCode) {
-        return vatSpecialItemConfigMapper.selectList(new LambdaQueryWrapper<TaxVatSpecialItemConfig>()
-                .eq(TaxVatSpecialItemConfig::getIsDeleted, 0)
-                .eq(StringUtils.hasText(companyCode), TaxVatSpecialItemConfig::getCompanyCode, companyCode)
-                .orderByAsc(TaxVatSpecialItemConfig::getItemSeq));
+    public List<VatSpecialItemConfig> listVatSpecialItemConfig(String companyCode) {
+        return vatSpecialItemConfigMapper.selectList(new LambdaQueryWrapper<VatSpecialItemConfig>()
+                .eq(VatSpecialItemConfig::getIsDeleted, 0)
+                .eq(StringUtils.hasText(companyCode), VatSpecialItemConfig::getCompanyCode, companyCode)
+                .orderByAsc(VatSpecialItemConfig::getItemSeq));
     }
 
     /**
      * 保存增值税特殊条目配置
      */
-    public TaxVatSpecialItemConfig saveVatSpecialItemConfig(TaxVatSpecialItemConfig config) {
+    public VatSpecialItemConfig saveVatSpecialItemConfig(VatSpecialItemConfig config) {
         config.setIsDeleted(0);
         if (config.getId() == null || vatSpecialItemConfigMapper.selectById(config.getId()) == null) {
             vatSpecialItemConfigMapper.insert(config);
@@ -189,7 +189,7 @@ public class TaxConfigService {
      * 删除增值税特殊条目配置（逻辑删除）
      */
     public void deleteVatSpecialItemConfig(Long id) {
-        TaxVatSpecialItemConfig config = vatSpecialItemConfigMapper.selectById(id);
+        VatSpecialItemConfig config = vatSpecialItemConfigMapper.selectById(id);
         if (config != null) {
             config.setIsDeleted(1);
             vatSpecialItemConfigMapper.updateById(config);

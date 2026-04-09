@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("t_ledger_run_stage")
-public class TaxLedgerRunStage extends AuditingEntity {
+public class LedgerRunStage extends AuditingEntity {
     /** 运行 ID */
     private Long runId;
 
