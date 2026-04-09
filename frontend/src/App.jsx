@@ -21,7 +21,7 @@ import {
   Typography
 } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import { DeleteOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import client from "./api/client";
 import "./App.css";
@@ -196,6 +196,9 @@ function FilePanel({ companyCode }) {
   const [rows, setRows] = useState([]);
   const [yearMonth, setYearMonth] = useState("2026-01");
   const [category, setCategory] = useState("BS");
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadSubmitting, setUploadSubmitting] = useState(false);
+  const [uploadRows, setUploadRows] = useState([]);
   const [pullModalOpen, setPullModalOpen] = useState(false);
   const [pullSubmitting, setPullSubmitting] = useState(false);
   const [companyOptions, setCompanyOptions] = useState([]);
@@ -249,6 +252,92 @@ function FilePanel({ companyCode }) {
     }
   };
 
+  const onOpenUploadModal = () => {
+    setUploadModalOpen(true);
+    setUploadRows([]);
+    loadCompanyOptions();
+  };
+
+  const addUploadFile = (file) => {
+    const filename = file?.name || "";
+    if (!filename.toLowerCase().endsWith(".xlsx")) {
+      message.error("仅支持上传 .xlsx 文件");
+      return false;
+    }
+    setUploadRows((prev) => {
+      if (prev.some((row) => row.uid === file.uid)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          uid: file.uid,
+          file,
+          fileName: filename,
+          companyCode: companyCode || undefined,
+          fileCategory: category,
+          status: "待上传"
+        }
+      ];
+    });
+    return false;
+  };
+
+  const removeUploadRow = (uid) => {
+    setUploadRows((prev) => prev.filter((item) => item.uid !== uid));
+  };
+
+  const updateUploadRow = (uid, patch) => {
+    setUploadRows((prev) => prev.map((item) => (item.uid === uid ? { ...item, ...patch } : item)));
+  };
+
+  const submitUpload = async () => {
+    if (!uploadRows.length) {
+      message.warning("请先选择需要上传的文件");
+      return;
+    }
+    const invalidRow = uploadRows.find((row) => !row.companyCode || !row.fileCategory);
+    if (invalidRow) {
+      message.warning("请为每个文件选择公司代码和文件类别");
+      return;
+    }
+    try {
+      setUploadSubmitting(true);
+      let successCount = 0;
+      for (const row of uploadRows) {
+        updateUploadRow(row.uid, { status: "上传中" });
+        try {
+          const formData = new FormData();
+          formData.append("file", row.file);
+          formData.append("companyCode", row.companyCode);
+          formData.append("yearMonth", yearMonth);
+          formData.append("fileCategory", row.fileCategory);
+          await client.post("/tax-ledger/files/upload", formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+          });
+          successCount += 1;
+          updateUploadRow(row.uid, { status: "成功" });
+        } catch {
+          updateUploadRow(row.uid, { status: "失败" });
+        }
+      }
+      if (successCount === uploadRows.length) {
+        message.success(`上传成功，共 ${successCount} 个文件`);
+        setUploadModalOpen(false);
+        setUploadRows([]);
+      } else if (successCount > 0) {
+        message.warning(`部分成功：${successCount}/${uploadRows.length}`);
+      } else {
+        message.error("上传失败，请检查后重试");
+      }
+      if (successCount > 0) {
+        load();
+      }
+    } finally {
+      setUploadSubmitting(false);
+    }
+  };
+
   const onOpenPullModal = () => {
     const [year, month] = yearMonth.split("-");
     const period = String(Number(month || "1")).padStart(2, "0");
@@ -276,24 +365,24 @@ function FilePanel({ companyCode }) {
       const requestMonth = String(Math.min(endMonth, 12)).padStart(2, "0");
       const requestYearMonth = `${fiscalYear}-${requestMonth}`;
       const makeFiscalPeriod = (monthValue) => `${fiscalYear}${String(monthValue).padStart(2, "0")}1`;
-      const results = await Promise.allSettled(
-        values.companyCodes.map((code) =>
-          client.post("/tax-ledger/datalake/pull", {
-            companyCode: code,
-            yearMonth: requestYearMonth,
-            fiscalYearPeriodStart: makeFiscalPeriod(startMonth),
-            fiscalYearPeriodEnd: makeFiscalPeriod(endMonth)
-          })
-        )
-      );
-      const successCount = results.filter((item) => item.status === "fulfilled").length;
-      const failedCount = results.length - successCount;
+      const { data } = await client.post("/tax-ledger/datalake/pull", {
+        companyCodeList: values.companyCodes,
+        yearMonth: requestYearMonth,
+        fiscalYearPeriodStart: makeFiscalPeriod(startMonth),
+        fiscalYearPeriodEnd: makeFiscalPeriod(endMonth)
+      });
+      const successCount = Number(data?.successCount ?? 0);
+      const failedCount = Number(data?.failCount ?? 0);
+      const errorList = Array.isArray(data?.errors) ? data.errors : [];
       if (failedCount === 0) {
         message.success(`数据湖拉取完成，共 ${successCount} 家公司`);
       } else if (successCount > 0) {
         message.warning(`部分完成：成功 ${successCount} 家，失败 ${failedCount} 家`);
       } else {
         message.error("数据湖拉取失败，请检查后重试");
+      }
+      if (errorList.length > 0) {
+        message.warning(errorList.slice(0, 3).join("；"));
       }
       if (successCount > 0) {
         setYearMonth(requestYearMonth);
@@ -334,29 +423,95 @@ function FilePanel({ companyCode }) {
           style={{ width: 260 }}
         />
         <Upload
-          showUploadList={false}
-          customRequest={async ({ file, onSuccess, onError }) => {
-            try {
-              const formData = new FormData();
-              formData.append("file", file);
-              formData.append("companyCode", companyCode);
-              formData.append("yearMonth", yearMonth);
-              formData.append("fileCategory", category);
-              await client.post("/tax-ledger/files/upload", formData, {
-                headers: { "Content-Type": "multipart/form-data" }
-              });
-              message.success("文件上传成功");
-              onSuccess?.();
-              load();
-            } catch (err) {
-              onError?.(err);
-            }
-          }}
+          openFileDialogOnClick={false}
         >
-        <Button icon={<UploadOutlined />}>上传文件</Button>
+          <Button icon={<UploadOutlined />} onClick={onOpenUploadModal}>上传文件</Button>
         </Upload>
         <Button onClick={onOpenPullModal}>拉取数据湖</Button>
       </Space>
+
+      <Modal
+        title="上传结果excel"
+        open={uploadModalOpen}
+        destroyOnHidden
+        width={980}
+        onCancel={() => {
+          setUploadModalOpen(false);
+          setUploadRows([]);
+        }}
+        onOk={submitUpload}
+        okText="确定"
+        cancelText="取消"
+        confirmLoading={uploadSubmitting}
+      >
+        <Upload.Dragger
+          multiple
+          accept=".xlsx"
+          showUploadList={false}
+          beforeUpload={addUploadFile}
+          className="upload-dragger"
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">点击或拖拽文件上传</p>
+          <p className="ant-upload-hint">支持 .xlsx 格式文件</p>
+        </Upload.Dragger>
+
+        <Table
+          style={{ marginTop: 16 }}
+          rowKey="uid"
+          pagination={false}
+          locale={{ emptyText: "暂无待上传文件" }}
+          dataSource={uploadRows}
+          columns={[
+            { title: "文件名", dataIndex: "fileName" },
+            {
+              title: "公司代码",
+              dataIndex: "companyCode",
+              render: (_, row) => (
+                <Select
+                  value={row.companyCode}
+                  showSearch
+                  placeholder="请选择公司代码"
+                  style={{ width: "100%" }}
+                  loading={companyLoading}
+                  options={companyOptions}
+                  filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+                  onSearch={loadCompanyOptions}
+                  onChange={(value) => updateUploadRow(row.uid, { companyCode: value })}
+                />
+              )
+            },
+            {
+              title: "类型",
+              dataIndex: "fileCategory",
+              render: (_, row) => (
+                <Select
+                  value={row.fileCategory}
+                  placeholder="请选择类型"
+                  style={{ width: "100%" }}
+                  options={FILE_CATEGORIES}
+                  onChange={(value) => updateUploadRow(row.uid, { fileCategory: value })}
+                />
+              )
+            },
+            { title: "进度", dataIndex: "status" },
+            {
+              title: "操作",
+              width: 80,
+              render: (_, row) => (
+                <Button
+                  danger
+                  type="text"
+                  icon={<DeleteOutlined />}
+                  onClick={() => removeUploadRow(row.uid)}
+                />
+              )
+            }
+          ]}
+        />
+      </Modal>
 
       <Modal
         title="数据湖拉取"
@@ -428,7 +583,26 @@ function FilePanel({ companyCode }) {
           {
             title: "操作",
             render: (_, row) => (
-              <Button onClick={() => window.open(`/tax-ledger/files/${row.id}/download`, "_blank")}>下载</Button>
+              <Space>
+                <Button onClick={() => window.open(`/tax-ledger/files/${row.id}/download`, "_blank")}>下载</Button>
+                <Popconfirm
+                  title="确认删除该文件？"
+                  description="删除后不可恢复"
+                  okText="确认"
+                  cancelText="取消"
+                  onConfirm={async () => {
+                    try {
+                      await client.delete(`/tax-ledger/files/${row.id}`);
+                      message.success("删除成功");
+                      load();
+                    } catch {
+                      // 失败提示已由全局拦截器处理
+                    }
+                  }}
+                >
+                  <Button danger>删除</Button>
+                </Popconfirm>
+              </Space>
             )
           }
         ]}
@@ -903,7 +1077,11 @@ function ConfigPanel({ companyCode }) {
             <Popconfirm
               overlayClassName="pretty-popconfirm"
               title={`确认删除该${activeMeta.label}？`}
-              description="删除后将立即生效，如需恢复请重新新增。"
+              description={
+                activeMeta.key === "company-code"
+                  ? "删除后将同步清除该公司在文件记录、台账运行、配置覆盖与权限映射中的关联数据，且操作不可撤销；如需恢复，仅可重新新增公司并重新导入/授权。"
+                  : "删除后将立即生效，如需恢复请重新新增。"
+              }
               okText="确认删除"
               cancelText="取消"
                 okButtonProps={{ danger: true }}
@@ -1055,7 +1233,10 @@ function ConfigPanel({ companyCode }) {
                         }}
                       />
                     ) : (
-                      <Input placeholder={f.label} />
+                      <Input
+                        placeholder={f.label}
+                        disabled={Boolean(editing && activeMeta.key === "company-code" && f.name === "companyCode")}
+                      />
                     )}
                   </Form.Item>
                 </Col>

@@ -7,25 +7,21 @@ import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.infrastructure.security.SecurityUtils;
 import com.envision.epc.infrastructure.web.domain.BaseQueryService;
-import com.envision.epc.module.permission.application.PermissionConfig;
+import com.envision.epc.module.taxledger.common.TaxLedgerProperties;
 import com.envision.epc.module.user.application.dto.UserAssembler;
 import com.envision.epc.module.user.application.dto.UserDto;
 import com.envision.epc.module.user.domain.User;
 import com.envision.epc.module.user.domain.UserRepository;
 import jakarta.annotation.Resource;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-
 /**
- * @author yakun.meng
- * @since 2024/5/9-15:18
+ * 用户查询服务
  */
 @Service
-@EnableConfigurationProperties(PermissionConfig.class)
 public class UserQueryService extends BaseQueryService<UserRepository, User> {
     private static final String TEMP_BYPASS_USER_CODE = "EX413903";
     private static final String TEMP_BYPASS_ACCOUNT = "gangxiang.guan";
@@ -36,16 +32,16 @@ public class UserQueryService extends BaseQueryService<UserRepository, User> {
     private UserAssembler assembler;
 
     @Resource
-    private PermissionConfig permissionConfig;
+    private TaxLedgerProperties taxLedgerProperties;
 
     /**
      * login only
+     *
      * @param userCode account
      * @return user
      */
     public User getByUserCode(String userCode) {
         User user = super.repository.lambdaQuery().eq(User::getInService, true).eq(User::getUserCode, userCode).one();
-        // TODO: Temporary bypass for auth failure (code=10002). Remove after auth chain is fixed.
         if (isTempBypassUser(userCode)) {
             return user != null ? user : buildTempBypassUser();
         }
@@ -53,13 +49,9 @@ public class UserQueryService extends BaseQueryService<UserRepository, User> {
             throw new BizException(ErrorCode.AUTH_ACCESS_DENIED);
         }
 
-        if (permissionConfig.getAdmin().contains(user.getUserCode())) {
+        // 保留 admin 放行；已按要求移除 division 白名单维度。
+        if (taxLedgerProperties.getSuperAdminUserCodes().contains(user.getUserCode())) {
             return user;
-        }
-
-        if (!permissionConfig.getDivisions().isEmpty()
-                && !permissionConfig.getDivisions().contains(user.getDivisionCode())) {
-            throw new BizException(ErrorCode.AUTH_ACCESS_DENIED);
         }
 
         return user;

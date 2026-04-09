@@ -4,8 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
+import com.envision.epc.module.taxledger.domain.CompanyCodeConfig;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
+import com.envision.epc.module.taxledger.infrastructure.CompanyCodeConfigMapper;
 import com.envision.epc.module.taxledger.infrastructure.FileRecordMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -16,9 +18,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -31,6 +35,7 @@ public class FileService {
 
     private final BlobStorageRemote blobStorageRemote;
     private final FileRecordMapper fileRecordMapper;
+    private final CompanyCodeConfigMapper companyCodeConfigMapper;
     private final PermissionService permissionService;
 
     /**
@@ -41,10 +46,18 @@ public class FileService {
         if (file == null || file.isEmpty()) {
             throw new BizException(ErrorCode.BAD_REQUEST, "empty file");
         }
+        if (category == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "fileCategory is required");
+        }
+        if (!isValidCompanyCode(companyCode)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "companyCode not found");
+        }
 
         String originalName = file.getOriginalFilename();
         String filename = originalName == null ? "unknown.xlsx" : originalName;
-        String blobPath = String.format("tax-ledger/%s/%s/%s/%s_%s",
+        validateXlsx(file, filename);
+
+        String blobPath = String.format("tax-ledger/%s/%s/%s/%s_%s.xlsx",
                 companyCode, yearMonth, category.name(), LocalDateTime.now().format(TS_FORMATTER), UUID.randomUUID());
 
         try (InputStream inputStream = file.getInputStream()) {
@@ -86,6 +99,29 @@ public class FileService {
         return record;
     }
 
+    private boolean isValidCompanyCode(String companyCode) {
+        return companyCodeConfigMapper.selectCount(new LambdaQueryWrapper<CompanyCodeConfig>()
+                .eq(CompanyCodeConfig::getIsDeleted, 0)
+                .eq(CompanyCodeConfig::getCompanyCode, companyCode)) > 0;
+    }
+
+    private void validateXlsx(MultipartFile file, String filename) {
+        if (!filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "only .xlsx file is allowed");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || contentType.isBlank()) {
+            return;
+        }
+        String normalized = contentType.toLowerCase(Locale.ROOT);
+        boolean validType =
+                normalized.contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        || normalized.contains("application/octet-stream");
+        if (!validType) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "invalid file content type");
+        }
+    }
+
     /**
      * 列表查询
      */
@@ -96,6 +132,33 @@ public class FileService {
                 .eq(FileRecord::getCompanyCode, companyCode)
                 .eq(FileRecord::getYearMonth, yearMonth)
                 .orderByDesc(FileRecord::getCreateTime));
+    }
+
+    public void deleteFiles(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "ids is empty");
+        }
+        ids.stream().filter(Objects::nonNull).distinct().forEach(this::deleteFile);
+    }
+
+    public void deleteFile(Long id) {
+        if (id == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "id is empty");
+        }
+        FileRecord record = fileRecordMapper.selectById(id);
+        if (record == null || record.getIsDeleted() == 1) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "File not found");
+        }
+
+        permissionService.checkCompanyAccess(record.getCompanyCode());
+        record.setIsDeleted(1);
+        fileRecordMapper.updateById(record);
+
+        try {
+            blobStorageRemote.delete(record.getBlobPath());
+        } catch (Exception ignore) {
+            // 主流程以逻辑删除成功为准
+        }
     }
 
     /**

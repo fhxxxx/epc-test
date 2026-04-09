@@ -23,13 +23,7 @@ public class AsposeUtils {
     public static void loadLicense() {
         try (InputStream licenseStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(LICENSE_FILE_NAME)) {
             byte[] licenseBytes = Objects.requireNonNull(licenseStream, "未找到 Aspose.Total 许可证文件！").readAllBytes();
-            try (ByteArrayInputStream wordLicenseStream = new ByteArrayInputStream(licenseBytes);
-                 ByteArrayInputStream pdfLicenseStream = new ByteArrayInputStream(licenseBytes);
-                 ByteArrayInputStream excelLicenseStream = new ByteArrayInputStream(licenseBytes);) {
-                new com.aspose.words.License().setLicense(wordLicenseStream);
-                log.info("Aspose.Words 许可证已成功加载！");
-                new com.aspose.pdf.License().setLicense(pdfLicenseStream);
-                log.info("Aspose.Pdf 许可证已成功加载！");
+            try (ByteArrayInputStream excelLicenseStream = new ByteArrayInputStream(licenseBytes);) {
                 new com.aspose.cells.License().setLicense(excelLicenseStream);
                 log.info("Aspose.Cells 许可证已成功加载！");
             }

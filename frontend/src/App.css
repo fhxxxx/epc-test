@@ -180,6 +180,31 @@ body {
   color: #2a4476;
 }
 
+.upload-dragger.ant-upload-wrapper .ant-upload-drag {
+  border: 1px dashed #7aa9ff;
+  border-radius: 12px;
+  background: #fafdff;
+}
+
+.upload-dragger.ant-upload-wrapper .ant-upload-drag .ant-upload {
+  padding: 28px 12px;
+}
+
+.upload-dragger .ant-upload-drag-icon .anticon {
+  color: #1677ff;
+  font-size: 34px;
+}
+
+.upload-dragger .ant-upload-text {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a2a48;
+}
+
+.upload-dragger .ant-upload-hint {
+  color: #8d97a8;
+}
+
 @media (max-width: 960px) {
   .config-shell {
     grid-template-columns: 1fr;

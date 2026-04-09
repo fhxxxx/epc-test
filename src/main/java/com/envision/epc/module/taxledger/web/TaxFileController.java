@@ -1,5 +1,6 @@
 package com.envision.epc.module.taxledger.web;
 
+import com.envision.epc.infrastructure.filter.upload.UploadFileType;
 import com.envision.epc.module.taxledger.application.service.FileService;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
@@ -23,6 +24,7 @@ public class TaxFileController {
     /**
      * 上传文件
      */
+    @UploadFileType(fileType = {"xlsx"})
     @PostMapping("/upload")
     public FileRecord upload(@RequestParam String companyCode,
                              @RequestParam String yearMonth,
@@ -37,6 +39,16 @@ public class TaxFileController {
     @GetMapping
     public List<FileRecord> list(@RequestParam String companyCode, @RequestParam String yearMonth) {
         return fileService.list(companyCode, yearMonth);
+    }
+
+    @DeleteMapping
+    public void deleteFiles(@RequestParam("ids") List<Long> ids) {
+        fileService.deleteFiles(ids);
+    }
+
+    @DeleteMapping("/{id}")
+    public void deleteFile(@PathVariable Long id) {
+        fileService.deleteFile(id);
     }
 
     /**
