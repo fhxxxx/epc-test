@@ -2,6 +2,7 @@
 import {
   Button,
   Card,
+  Checkbox,
   Col,
   ConfigProvider,
   DatePicker,
@@ -21,7 +22,7 @@ import {
   Typography
 } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { DeleteOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import { DeleteOutlined, FilterFilled, InboxOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import client from "./api/client";
 import "./App.css";
@@ -201,6 +202,8 @@ function FilePanel({ companyCode }) {
   const [rows, setRows] = useState([]);
   const [yearMonth, setYearMonth] = useState("2026-01");
   const [category, setCategory] = useState("BS");
+  const [pageCurrent, setPageCurrent] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadSubmitting, setUploadSubmitting] = useState(false);
   const [uploadRows, setUploadRows] = useState([]);
@@ -211,6 +214,20 @@ function FilePanel({ companyCode }) {
   const [companyOptions, setCompanyOptions] = useState([]);
   const [companyLoading, setCompanyLoading] = useState(false);
   const [pullForm] = Form.useForm();
+  const formatFileSize = (bytes) => {
+    const size = Number(bytes);
+    if (!Number.isFinite(size) || size < 0) return "-";
+    return `${(size / 1024).toFixed(2)} KB`;
+  };
+  const formatDateTime = (value) => {
+    if (!value) return "-";
+    const parsed = dayjs(value);
+    return parsed.isValid() ? parsed.format("YYYY-MM-DD HH:mm:ss") : String(value);
+  };
+  const categoryLabelMap = useMemo(
+    () => Object.fromEntries(FILE_CATEGORIES.map((item) => [item.value, item.label])),
+    []
+  );
 
   const periodOptions = useMemo(
     () => Array.from({ length: 16 }, (_, i) => {
@@ -237,6 +254,7 @@ function FilePanel({ companyCode }) {
   };
 
   useEffect(() => {
+    setPageCurrent(1);
     load({ silentNoCompany: true });
   }, [companyCode, yearMonth]);
 
@@ -449,12 +467,6 @@ function FilePanel({ companyCode }) {
       )}
     >
       <Space style={{ marginBottom: 16 }}>
-        <Select
-          value={category}
-          onChange={setCategory}
-          options={FILE_CATEGORIES}
-          style={{ width: 260 }}
-        />
         <Upload
           openFileDialogOnClick={false}
         >
@@ -638,9 +650,54 @@ function FilePanel({ companyCode }) {
         rowKey="id"
         dataSource={Array.isArray(rows) ? rows : []}
         columns={[
-          { title: "类别", dataIndex: "fileCategory", render: (v, row) => <Tag>{row?.fileCategoryName || v}</Tag> },
+          {
+            title: "类别",
+            dataIndex: "fileCategory",
+            render: (v, row) => <Tag>{row?.fileCategoryName || categoryLabelMap[v] || v}</Tag>,
+            filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
+              const checkedValues = Array.isArray(selectedKeys) ? selectedKeys : [];
+              const options = FILE_CATEGORIES.map((item) => ({ value: item.value, label: item.label }));
+
+              return (
+                <div style={{ width: 220, padding: 10 }}>
+                  <div style={{ marginBottom: 8, fontWeight: 600 }}>类型</div>
+                  <Checkbox.Group
+                    value={checkedValues}
+                    style={{ width: "100%", maxHeight: 220, overflowY: "auto" }}
+                    onChange={(vals) => setSelectedKeys(Array.isArray(vals) ? vals : [])}
+                  >
+                    <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                      {options.map((item) => (
+                        <Checkbox key={item.value} value={item.value} style={{ width: "100%" }}>
+                          {item.label}
+                        </Checkbox>
+                      ))}
+                    </Space>
+                  </Checkbox.Group>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        clearFilters?.();
+                        setSelectedKeys([]);
+                      }}
+                    >
+                      重置
+                    </Button>
+                    <Button type="primary" size="small" onClick={() => confirm()}>
+                      确定
+                    </Button>
+                  </div>
+                </div>
+              );
+            },
+            filterIcon: (filtered) => <FilterFilled style={{ color: filtered ? "#1677ff" : undefined }} />,
+            onFilter: (value, record) => String(record?.fileCategory ?? "") === String(value ?? "")
+          },
           { title: "文件名", dataIndex: "fileName" },
-          { title: "文件大小", dataIndex: "fileSize", render: (v) => (v ? `${v} B` : "-") },
+          { title: "文件大小", dataIndex: "fileSize", render: (v) => formatFileSize(v) },
+          { title: "创建人", dataIndex: "createByName", render: (v, row) => v || row?.createBy || "-" },
+          { title: "创建时间", dataIndex: "createTime", render: (v) => formatDateTime(v) },
           {
             title: "操作",
             render: (_, row) => (
@@ -667,6 +724,20 @@ function FilePanel({ companyCode }) {
             )
           }
         ]}
+        pagination={{
+          current: pageCurrent,
+          pageSize,
+          total: Array.isArray(rows) ? rows.length : 0,
+          showSizeChanger: true,
+          pageSizeOptions: ["10", "20", "50", "100"],
+          showTotal: (total) => `共 ${total} 条`,
+          locale: { items_per_page: "/页" },
+          onChange: (current, size) => {
+            setPageCurrent(current);
+            setPageSize(size);
+          },
+          position: ["bottomRight"]
+        }}
       />
     </Card>
   );

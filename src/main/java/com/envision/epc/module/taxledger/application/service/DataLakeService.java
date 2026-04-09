@@ -98,6 +98,7 @@ public class DataLakeService {
 
             List<FileRecord> records = new ArrayList<>();
             for (Map.Entry<FileCategoryEnum, List<DatalakeDTO>> entry : grouped.entrySet()) {
+                String timestamp = LocalDateTime.now().format(TS_FORMATTER);
                 String sheetName = toSheetName(entry.getKey());
                 byte[] bytes = toExcelBytes(entry.getValue(), sheetName);
                 String blobPath = String.format(
@@ -105,15 +106,16 @@ public class DataLakeService {
                         companyCode,
                         command.getYearMonth(),
                         entry.getKey().name(),
-                        LocalDateTime.now().format(TS_FORMATTER),
+                        timestamp,
                         UUID.randomUUID()
                 );
+                String fileName = toFileTypeName(entry.getKey()) + "-" + timestamp + ".xlsx";
                 blobStorageRemote.upload(blobPath, new ByteArrayInputStream(bytes));
 
                 FileRecord record = fileService.saveOrReplace(
                         companyCode,
                         command.getYearMonth(),
-                        entry.getKey().name() + ".xlsx",
+                        fileName,
                         entry.getKey(),
                         blobPath,
                         (long) bytes.length
@@ -205,6 +207,17 @@ public class DataLakeService {
         };
     }
 
+    private static String toFileTypeName(FileCategoryEnum category) {
+        return switch (category) {
+            case DL_INCOME -> "\u6536\u5165\u660e\u7ec6";
+            case DL_OUTPUT -> "\u9500\u9879\u660e\u7ec6";
+            case DL_INPUT -> "\u8fdb\u9879\u660e\u7ec6";
+            case DL_INCOME_TAX -> "\u6240\u5f97\u7a0e\u660e\u7ec6";
+            case DL_OTHER -> "\u5176\u4ed6\u79d1\u76ee\u660e\u7ec6";
+            default -> category.name();
+        };
+    }
+
     @lombok.Value(staticConstructor = "of")
     private static class CompanyPullResult {
         List<FileRecord> records;
@@ -219,4 +232,3 @@ public class DataLakeService {
         }
     }
 }
-
