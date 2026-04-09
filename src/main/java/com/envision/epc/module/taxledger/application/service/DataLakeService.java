@@ -1,14 +1,17 @@
 package com.envision.epc.module.taxledger.application.service;
 
 import cn.hutool.core.text.CharSequenceUtil;
+import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.facade.platform.PlatformRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.extract.infrastructure.Constant;
+import com.envision.epc.module.taxledger.application.DatalakeExportAssembler;
 import com.envision.epc.module.taxledger.application.command.DataLakePullCommand;
 import com.envision.epc.module.taxledger.application.dto.DataLakeBatchPullResultDTO;
 import com.envision.epc.module.taxledger.application.dto.DatalakeDTO;
+import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +23,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -32,7 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 数据湖拉取与分类服务
+ * Datalake pull and category split service.
  */
 @Slf4j
 @Service
@@ -44,24 +47,18 @@ public class DataLakeService {
     private final BlobStorageRemote blobStorageRemote;
     private final PermissionService permissionService;
     private final FileService fileService;
+    private final DatalakeExportAssembler datalakeExportAssembler;
     private final TaskExecutor taskExecutor;
 
     @Value("${custom.platform.token.domain}")
     private String platformDomain;
 
-    /**
-     * 批量拉取并按规则生成 5 类 DL 文件
-     */
     public DataLakeBatchPullResultDTO pull(DataLakePullCommand command) {
         List<String> companyCodes = normalizeCompanyCodes(command.getCompanyCodeList());
 
         List<CompletableFuture<CompanyPullResult>> futures = new ArrayList<>();
         for (String companyCode : companyCodes) {
-            CompletableFuture<CompanyPullResult> future = CompletableFuture.supplyAsync(
-                    () -> pullSingleCompany(command, companyCode),
-                    taskExecutor
-            );
-            futures.add(future);
+            futures.add(CompletableFuture.supplyAsync(() -> pullSingleCompany(command, companyCode), taskExecutor));
         }
 
         DataLakeBatchPullResultDTO result = new DataLakeBatchPullResultDTO();
@@ -101,19 +98,22 @@ public class DataLakeService {
 
             List<FileRecord> records = new ArrayList<>();
             for (Map.Entry<FileCategoryEnum, List<DatalakeDTO>> entry : grouped.entrySet()) {
-                byte[] bytes = toCsv(entry.getValue()).getBytes(StandardCharsets.UTF_8);
-                String blobPath = String.format("tax-ledger/%s/%s/%s/%s_%s.csv",
+                String sheetName = toSheetName(entry.getKey());
+                byte[] bytes = toExcelBytes(entry.getValue(), sheetName);
+                String blobPath = String.format(
+                        "tax-ledger/%s/%s/%s/%s_%s.xlsx",
                         companyCode,
                         command.getYearMonth(),
                         entry.getKey().name(),
                         LocalDateTime.now().format(TS_FORMATTER),
-                        UUID.randomUUID());
+                        UUID.randomUUID()
+                );
                 blobStorageRemote.upload(blobPath, new ByteArrayInputStream(bytes));
 
                 FileRecord record = fileService.saveOrReplace(
                         companyCode,
                         command.getYearMonth(),
-                        entry.getKey().name() + ".csv",
+                        entry.getKey().name() + ".xlsx",
                         entry.getKey(),
                         blobPath,
                         (long) bytes.length
@@ -122,8 +122,8 @@ public class DataLakeService {
             }
             return CompanyPullResult.success(records);
         } catch (Exception e) {
-            log.error("数据湖批量拉取异常，公司代码: {}", companyCode, e);
-            return CompanyPullResult.error("公司代码 " + companyCode + " 拉取异常: " + e.getMessage());
+            log.error("Datalake pull failed, companyCode={}", companyCode, e);
+            return CompanyPullResult.error("companyCode " + companyCode + " pull failed: " + e.getMessage());
         }
     }
 
@@ -145,6 +145,18 @@ public class DataLakeService {
                 reqUrl,
                 DatalakeDTO::fromPltData
         );
+    }
+
+    private byte[] toExcelBytes(List<DatalakeDTO> rows, String sheetName) {
+        List<DatalakeExportRowDTO> exportRows = datalakeExportAssembler.toExportRows(rows);
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            EasyExcelFactory.write(outputStream, DatalakeExportRowDTO.class)
+                    .sheet(sheetName)
+                    .doWrite(exportRows);
+            return outputStream.toByteArray();
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR, "datalake excel export failed: " + e.getMessage());
+        }
     }
 
     private static List<String> normalizeCompanyCodes(List<String> companyCodeList) {
@@ -182,26 +194,15 @@ public class DataLakeService {
         return FileCategoryEnum.DL_OTHER;
     }
 
-    private static String toCsv(List<DatalakeDTO> rows) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("reference,fiscalYearPeriod,companyCode,account,debit,credit,itemText\\n");
-        for (DatalakeDTO row : rows) {
-            sb.append(safe(row.getReference())).append(",")
-                    .append(safe(row.getFiscalYearPeriod())).append(",")
-                    .append(safe(row.getCompanyCode())).append(",")
-                    .append(safe(row.getAccount())).append(",")
-                    .append(row.getDebitAmountInLocalCurrency() == null ? "" : row.getDebitAmountInLocalCurrency()).append(",")
-                    .append(row.getCreditAmountInLocalCurrency() == null ? "" : row.getCreditAmountInLocalCurrency()).append(",")
-                    .append(safe(row.getItemText())).append("\\n");
-        }
-        return sb.toString();
-    }
-
-    private static String safe(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace(",", " ");
+    private static String toSheetName(FileCategoryEnum category) {
+        return switch (category) {
+            case DL_INCOME -> "income_detail";
+            case DL_OUTPUT -> "output_detail";
+            case DL_INPUT -> "input_detail";
+            case DL_INCOME_TAX -> "income_tax_detail";
+            case DL_OTHER -> "other_subject_detail";
+            default -> category.name();
+        };
     }
 
     @lombok.Value(staticConstructor = "of")
@@ -218,3 +219,4 @@ public class DataLakeService {
         }
     }
 }
+

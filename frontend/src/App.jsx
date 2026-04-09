@@ -38,7 +38,12 @@ const FILE_CATEGORIES = [
   { value: "STAMP_TAX", label: "印花税明细" },
   { value: "VAT_OUTPUT", label: "增值税销项" },
   { value: "VAT_INPUT_CERT", label: "增值税进项认证清单" },
-  { value: "CUMULATIVE_PROJECT_TAX", label: "累计项目税收明细表" }
+  { value: "CUMULATIVE_PROJECT_TAX", label: "累计项目税收明细表" },
+  { value: "DL_INCOME", label: "收入明细（数据湖）" },
+  { value: "DL_OUTPUT", label: "销项明细（数据湖）" },
+  { value: "DL_INPUT", label: "进项明细（数据湖）" },
+  { value: "DL_INCOME_TAX", label: "所得税明细（数据湖）" },
+  { value: "DL_OTHER", label: "其他科目明细（数据湖）" }
 ];
 
 const CONFIG_META = [
@@ -215,9 +220,12 @@ function FilePanel({ companyCode }) {
     []
   );
 
-  const load = async () => {
+  const load = async ({ silentNoCompany = true } = {}) => {
     if (!companyCode) {
       setRows([]);
+      if (!silentNoCompany) {
+        message.warning("请先在公司页选择目标公司");
+      }
       return;
     }
     try {
@@ -227,6 +235,10 @@ function FilePanel({ companyCode }) {
       setRows([]);
     }
   };
+
+  useEffect(() => {
+    load({ silentNoCompany: true });
+  }, [companyCode, yearMonth]);
 
   const loadCompanyOptions = async (keyword = "") => {
     try {
@@ -432,7 +444,7 @@ function FilePanel({ companyCode }) {
             value={dayjs(yearMonth, "YYYY-MM")}
             onChange={(_, dateString) => setYearMonth(dateString)}
           />
-          <Button onClick={load}>刷新</Button>
+          <Button onClick={() => load({ silentNoCompany: false })}>刷新</Button>
         </Space>
       )}
     >
@@ -626,7 +638,7 @@ function FilePanel({ companyCode }) {
         rowKey="id"
         dataSource={Array.isArray(rows) ? rows : []}
         columns={[
-          { title: "类别", dataIndex: "fileCategory", render: (v) => <Tag>{v}</Tag> },
+          { title: "类别", dataIndex: "fileCategory", render: (v, row) => <Tag>{row?.fileCategoryName || v}</Tag> },
           { title: "文件名", dataIndex: "fileName" },
           { title: "文件大小", dataIndex: "fileSize", render: (v) => (v ? `${v} B` : "-") },
           {

@@ -52,6 +52,10 @@ public class DatalakeDTO implements Serializable {
     @JsonProperty("account")
     private String account;
 
+    /** 借贷标识（S借方/H贷方） */
+    @JsonProperty("debit_credit_indicator")
+    private String debitCreditIndicator;
+
     /** 本币贷方金额 */
     @JsonProperty("credit_amount_in_local_currency")
     private BigDecimal creditAmountInLocalCurrency;

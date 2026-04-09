@@ -34,4 +34,8 @@ public class FileRecord extends AuditingEntity {
 
     /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;
+
+    public String getFileCategoryName() {
+        return fileCategory == null ? null : fileCategory.getDisplayName();
+    }
 }

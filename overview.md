@@ -35,7 +35,7 @@
 | 文件存储 | Azure Blob Storage（现成实现，本地仅存path） |
 | 认证 | Okta（现成实现） |
 | 前端 | React + Ant Design + Vite |
-| Excel操作 | Aspose.Cells |
+| Excel操作 | Aspose.Cells（台账）+ EasyExcel（数据湖明细导出） |
 
 ### 1.4 业务规模
 
@@ -57,6 +57,7 @@
 - 权限判定收敛：仅保留“超级管理员 + 用户-公司授权”两级，不再引入 `division` 白名单与项目级授权维度。
 - 权限接口收敛：权限新增/批量新增/删除接口不再接收 `permissionLevel`，后端移除对应参数校验逻辑。
 - 数据湖拉取改为批量接口：入参为 `companyCodeList`，单次请求支持多公司并发拉取并汇总结果。
+- 数据湖Excel导出策略：采用 `EasyExcel + 固定列DTO + Assembler计算`，仅保留首行表头，第二行起写数据。
 - 前端统一错误提示：后端返回 `{code!=0,msg}` 时，必须弹出 `msg`，禁止“失败场景仍提示成功”。
 
 ---
@@ -100,7 +101,7 @@
 | `auth` | Okta认证、用户信息管理 | `AuthController`, `UserService` |
 | `company-code` | 公司代码主数据维护（统一来源） | `TaxConfigController`, `TaxConfigService` |
 | `file` | 文件上传、下载、Azure Blob管理 | `FileController`, `FileService`, `BlobStorageService` |
-| `datalake` | 数据湖API调用、科目拆分、Aspose模板填充/公式重算/Excel生成 | `DataLakeController`, `DataLakeService`, `AccountSplitService` |
+| `datalake` | 数据湖API调用、科目拆分、EasyExcel导出（固定列、单表头） | `DataLakeController`, `DataLakeService`, `AccountSplitService` |
 | `ledger` | 台账生成核心逻辑（run驱动，含重试/续跑/失效） | `LedgerController`, `LedgerService` |
 | `config` | 5张配置表的CRUD管理 | `ConfigController`, `ConfigService` |
 | `permission` | 权限管理（超级管理员+公司用户映射） | `PermissionController`, `PermissionService` |
@@ -616,7 +617,7 @@ Content-Type: application/json
 处理流程：
 1. 按 `companyCodeList` 并发调用数据湖API
 2. 每个公司按account字段拆分为5类明细
-3. 每个公司生成5个Excel文件并上传到Azure Blob
+3. 每个公司通过 EasyExcel（固定列DTO）生成5个Excel文件并上传到Azure Blob
 4. 在 `t_file_record` 中按唯一键覆盖写入
 5. 汇总返回 `successCount/failCount/errors`
 
@@ -821,6 +822,32 @@ public enum AccountTypeEnum {
 **实现补充**：
 - 代码中不再使用旧 `AccountingDocumentDTO`，统一切换为 `DatalakeDTO`。
 - `fields=` 输出字段必须与需求文档《数据获取》-《数据集字段》一致，新增字段需同步更新DTO与常量模板。
+
+#### 5.1.4 数据湖Excel导出实现（轻量方案）
+
+**目标约束**：
+- 不依赖模板文件；
+- 导出文件仅保留第1行表头；
+- 第2行起为数据行；
+- 列顺序固定，所有字段按字符串写出。
+
+**实现方式**：
+- 使用 `EasyExcel`；
+- 定义固定列导出DTO（例如 `DatalakeExportRowDTO`），按 `@ExcelProperty(index=...)` 锁定列号；
+- 使用 Assembler 将 `DatalakeDTO -> DatalakeExportRowDTO`；
+- 所有复杂取值逻辑（如借贷方向影响金额正负）统一写在 Assembler 中，不在 DTO 注解层实现；
+- 写文件流程：`EasyExcel.write(outputStream, DatalakeExportRowDTO.class).sheet(sheetName).doWrite(rows)`。
+
+**计算逻辑约束（示例）**：
+- 本币金额：
+  - `debit_credit_indicator = "S"`：取借方金额字段；
+  - `debit_credit_indicator = "H"`：取贷方金额字段并乘 `-1`；
+- 货币金额同理；
+- 最终统一输出为字符串，空值按空字符串处理。
+
+**读取约束**：
+- 如需回读，按固定列号读取（不按表头文本匹配）；
+- 读取时默认从第2行开始作为数据行。
 
 ### 5.2 台账生成主流程
 
@@ -1665,11 +1692,13 @@ wb.calculateFormula();
 - ⚠️ 混合模式需要明确的编码规范
 - ⚠️ 修改后需要重新生成才能更新计算值
 
-### 10.5 Aspose模板填充/公式重算/Excel生成技术方案
+### 10.5 Excel生成技术方案（分场景）
 
-使用 **Aspose.Cells** 作为本项目Excel生成的唯一实现方式：
+**台账生成（主链路）**：使用 **Aspose.Cells**
+- 适用对象：`ledger_run` 各阶段产物与最终台账；
+- 原因：需要模板样式保留、复杂Sheet结构、公式重算与快照追溯。
 
-**推荐方案**：
+**推荐方案（台账）**：
 ```java
 // 1) 加载模板
 Workbook workbook = new Workbook(templatePath);
@@ -1690,10 +1719,15 @@ workbook.calculateFormula();
 workbook.save(outputPath);
 ```
 
-**样式与结构保障策略**：
+**样式与结构保障策略（台账）**：
 - 以模板为唯一样式来源，运行时仅填充值，不在代码中重建样式
 - 合并单元格、边框、条件格式按模板保留；新增数据行仅做必要样式复制
 - 跨Sheet引用优先保留模板公式；不稳定动态引用可回填计算值
+
+**数据湖明细导出（轻量链路）**：使用 **EasyExcel**
+- 适用对象：`DL_INCOME/DL_OUTPUT/DL_INPUT/DL_INCOME_TAX/DL_OTHER` 五类明细文件；
+- 约束：固定列顺序、单表头、无模板依赖、全字符串输出；
+- 规则：第1行表头，第2行开始数据；业务计算在 Assembler 中完成。
 
 ### 10.6 公式处理
 
@@ -1710,7 +1744,7 @@ workbook.save(outputPath);
 |------|------|-----------|
 | P0 - 基础框架 | 项目搭建、数据库建表、认证集成、权限框架 | 3天 |
 | P1 - 文件管理 | 公司CRUD、文件上传/下载/列表、Azure Blob集成 | 3天 |
-| P2 - 数据湖集成 | API调用、科目拆分、Aspose模板填充/公式重算/Excel生成 | 3天 |
+| P2 - 数据湖集成 | API调用、科目拆分、EasyExcel固定列导出（单表头） | 3天 |
 | P3 - 台账生成（核心） | 各Sheet页生成器、台账组装、前置校验 | 7天 |
 | P4 - 前端页面 | 首页、公司详情页、上传/拉取/生成弹窗 | 5天 |
 | P5 - 配置与权限 | 配置表管理CRUD、权限管理页面 | 3天 |
@@ -1833,11 +1867,11 @@ workbook.save(outputPath);
 1. 文件上传/下载/列表接口
 2. 数据湖API调用封装（参考InvoiceCommandService）
 3. 科目拆分逻辑
-4. 数据湖文件Aspose模板填充/公式重算/Excel生成（使用Aspose.Cells）
+4. 数据湖文件EasyExcel固定列导出（单表头，无模板）
 1. 文件上传/下载/列表接口
 2. 数据湖API调用封装
 3. 科目拆分逻辑
-4. 数据湖文件Aspose模板填充/公式重算/Excel生成
+4. 数据湖文件EasyExcel固定列导出
 
 **第三阶段：台账生成核心（P2）**
 1. 直取型Sheet页生成器（BS、PL、数据湖明细等）
