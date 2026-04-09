@@ -7,30 +7,31 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 绋庡姟鏂囦欢璁板綍
+ * 税务文件记录
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_tax_file_record")
+@TableName("t_file_record")
 public class TaxFileRecord extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;
+
     /** 账期（yyyy-MM） */
     @TableField("`year_month`")
     private String yearMonth;
+
     /** 文件名 */
     private String fileName;
+
     /** 文件类别 */
     private FileCategoryEnum fileCategory;
-    /** 文件来源（上传/数据湖） */
-    private FileSourceEnum fileSource;
-    /** Blob存储路径 */
+
+    /** Blob 存储路径 */
     private String blobPath;
+
     /** 文件大小（字节） */
     private Long fileSize;
-    /** 上传人工号 */
-    private String uploadUser;
-    /** 逻辑删除标记：0否/1是 */
+
+    /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;
 }
-

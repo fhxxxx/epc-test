@@ -5,7 +5,6 @@ import com.envision.epc.facade.platform.PlatformRemote;
 import com.envision.epc.module.extract.application.dtos.AccountingDocumentDTO;
 import com.envision.epc.module.taxledger.application.command.DataLakePullCommand;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
-import com.envision.epc.module.taxledger.domain.FileSourceEnum;
 import com.envision.epc.module.taxledger.domain.TaxFileRecord;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +27,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TaxDataLakeService {
     private static final DateTimeFormatter TS_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
     private final PlatformRemote platformRemote;
     private final BlobStorageRemote blobStorageRemote;
     private final TaxPermissionService permissionService;
@@ -37,18 +37,18 @@ public class TaxDataLakeService {
     private String platformDomain;
 
     /**
-     * 从数据湖拉取凭证数据，按科目分类后落地为5类DL文件
+     * 拉取并按规则生成 5 类 DL 文件
      */
     public List<TaxFileRecord> pull(DataLakePullCommand command) {
         permissionService.checkCompanyAccess(command.getCompanyCode());
-        // 调用平台接口拉取会计凭证
+
         String reqUrl = platformDomain + String.format(
                 "/api/finance/electronicArchives/%s/%s/%s/0/5000",
                 command.getCompanyCode(), command.getFiscalYearPeriodStart(), command.getFiscalYearPeriodEnd());
+
         List<AccountingDocumentDTO> documents = platformRemote.fetchFromDataLake(
                 "FINANCE_ELECTRONICARCHIVES_SVC", reqUrl, AccountingDocumentDTO::fromPltData);
 
-        // 预置5类目标分类容器
         Map<FileCategoryEnum, List<AccountingDocumentDTO>> grouped = new EnumMap<>(FileCategoryEnum.class);
         grouped.put(FileCategoryEnum.DL_INCOME, new ArrayList<>());
         grouped.put(FileCategoryEnum.DL_OUTPUT, new ArrayList<>());
@@ -56,12 +56,10 @@ public class TaxDataLakeService {
         grouped.put(FileCategoryEnum.DL_INCOME_TAX, new ArrayList<>());
         grouped.put(FileCategoryEnum.DL_OTHER, new ArrayList<>());
 
-        // 按科目号做归类
         for (AccountingDocumentDTO dto : documents) {
             grouped.get(resolveCategory(dto.getAccount())).add(dto);
         }
 
-        // 每个分类生成CSV并登记文件记录（同键覆盖）
         List<TaxFileRecord> records = new ArrayList<>();
         for (Map.Entry<FileCategoryEnum, List<AccountingDocumentDTO>> entry : grouped.entrySet()) {
             byte[] bytes = toCsv(entry.getValue()).getBytes(StandardCharsets.UTF_8);
@@ -69,17 +67,19 @@ public class TaxDataLakeService {
                     command.getCompanyCode(), command.getYearMonth(), entry.getKey().name(),
                     LocalDateTime.now().format(TS_FORMATTER), UUID.randomUUID());
             blobStorageRemote.upload(blobPath, new ByteArrayInputStream(bytes));
+
             TaxFileRecord record = fileService.saveOrReplace(
-                    command.getCompanyCode(), command.getYearMonth(),
-                    entry.getKey().name() + ".csv", entry.getKey(), FileSourceEnum.DATALAKE, blobPath, (long) bytes.length);
+                    command.getCompanyCode(),
+                    command.getYearMonth(),
+                    entry.getKey().name() + ".csv",
+                    entry.getKey(),
+                    blobPath,
+                    (long) bytes.length);
             records.add(record);
         }
         return records;
     }
 
-    /**
-     * 根据会计科目解析文件类别
-     */
     private static FileCategoryEnum resolveCategory(String account) {
         if (account == null) {
             return FileCategoryEnum.DL_OTHER;
@@ -99,12 +99,9 @@ public class TaxDataLakeService {
         return FileCategoryEnum.DL_OTHER;
     }
 
-    /**
-     * 简单CSV导出
-     */
     private static String toCsv(List<AccountingDocumentDTO> rows) {
         StringBuilder sb = new StringBuilder();
-        sb.append("reference,fiscalYearPeriod,companyCode,account,debit,credit,itemText\n");
+        sb.append("reference,fiscalYearPeriod,companyCode,account,debit,credit,itemText\\n");
         for (AccountingDocumentDTO row : rows) {
             sb.append(safe(row.getReference())).append(",")
                     .append(safe(row.getFiscalYearPeriod())).append(",")
@@ -112,14 +109,11 @@ public class TaxDataLakeService {
                     .append(safe(row.getAccount())).append(",")
                     .append(row.getDebitAmountInLocalCurrency() == null ? "" : row.getDebitAmountInLocalCurrency()).append(",")
                     .append(row.getCreditAmountInLocalCurrency() == null ? "" : row.getCreditAmountInLocalCurrency()).append(",")
-                    .append(safe(row.getItemText())).append("\n");
+                    .append(safe(row.getItemText())).append("\\n");
         }
         return sb.toString();
     }
 
-    /**
-     * CSV字段安全处理（逗号替换）
-     */
     private static String safe(String value) {
         if (value == null) {
             return "";

@@ -9,31 +9,37 @@ import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
 
 /**
- * 鍙拌处涓昏褰曪紙鍏徃+鏈堜唤缁村害锛? */
+ * 台账主记录（公司+月份）
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_tax_ledger_record")
+@TableName("t_ledger_record")
 public class TaxLedgerRecord extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;
+
     /** 账期（yyyy-MM） */
     @TableField("`year_month`")
     private String yearMonth;
+
     /** 台账文件名 */
     private String ledgerName;
-    /** 最终台账的Blob路径 */
+
+    /** 最终台账 Blob 路径 */
     private String blobPath;
+
     /** 生成人工号 */
     private String generateUser;
+
     /** 生成状态 */
     private LedgerGenerateStatusEnum generateStatus;
-    /** 状态描述/错误信息 */
+
+    /** 状态描述 */
     private String statusMsg;
-    /** 最终生成时间 */
+
+    /** 生成时间 */
     private LocalDateTime generatedAt;
-    /** 当前对外生效的最新运行ID */
-    private Long latestRunId;
-    /** 逻辑删除标记：0否/1是 */
+
+    /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;
 }
-

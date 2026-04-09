@@ -1,72 +1,181 @@
-CREATE TABLE IF NOT EXISTS t_tax_company (
+CREATE TABLE IF NOT EXISTS t_company_code_config (
     id BIGINT PRIMARY KEY,
     company_code VARCHAR(20) NOT NULL,
     company_name VARCHAR(200) NOT NULL,
     finance_bp_ad VARCHAR(100) NULL,
     finance_bp_name VARCHAR(100) NULL,
     finance_bp_email VARCHAR(200) NULL,
-    status TINYINT NOT NULL DEFAULT 1,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
     uk_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_company_code (uk_company_code_active)
+    UNIQUE KEY uk_company_code_active (uk_company_code_active)
 );
 
-CREATE TABLE IF NOT EXISTS t_tax_file_record (
+CREATE TABLE IF NOT EXISTS t_file_record (
     id BIGINT PRIMARY KEY,
     company_code VARCHAR(20) NOT NULL,
     `year_month` VARCHAR(7) NOT NULL,
     file_name VARCHAR(300) NOT NULL,
-    file_category VARCHAR(60) NOT NULL,
-    file_source VARCHAR(20) NOT NULL,
+    file_category VARCHAR(50) NOT NULL,
     blob_path VARCHAR(500) NOT NULL,
     file_size BIGINT NULL,
-    upload_user VARCHAR(100) NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
     uk_file_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
     uk_file_year_month_active VARCHAR(7) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN `year_month` ELSE NULL END) VIRTUAL,
-    uk_file_category_active VARCHAR(60) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN file_category ELSE NULL END) VIRTUAL,
-    uk_file_source_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN file_source ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_file (uk_file_company_code_active, uk_file_year_month_active, uk_file_category_active, uk_file_source_active),
-    KEY idx_tax_file_company_month (company_code, `year_month`)
+    uk_file_category_active VARCHAR(50) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN file_category ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_file_active (uk_file_company_code_active, uk_file_year_month_active, uk_file_category_active),
+    KEY idx_file_company_month (company_code, `year_month`)
 );
 
-CREATE TABLE IF NOT EXISTS t_tax_ledger_record (
+CREATE TABLE IF NOT EXISTS t_ledger_record (
     id BIGINT PRIMARY KEY,
     company_code VARCHAR(20) NOT NULL,
     `year_month` VARCHAR(7) NOT NULL,
     ledger_name VARCHAR(300) NOT NULL,
-    blob_path VARCHAR(500) NULL,
+    blob_path VARCHAR(500) NOT NULL,
     generate_user VARCHAR(100) NULL,
-    generate_status VARCHAR(20) NOT NULL,
+    generate_status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     status_msg VARCHAR(500) NULL,
     generated_at DATETIME NULL,
-    latest_run_id BIGINT NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
     uk_ledger_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
     uk_ledger_year_month_active VARCHAR(7) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN `year_month` ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_ledger_company_month (uk_ledger_company_code_active, uk_ledger_year_month_active),
-    KEY idx_tax_ledger_company_month (company_code, `year_month`)
+    UNIQUE KEY uk_ledger_active (uk_ledger_company_code_active, uk_ledger_year_month_active),
+    KEY idx_ledger_company_month (company_code, `year_month`)
 );
 
-CREATE TABLE IF NOT EXISTS t_tax_ledger_run (
+CREATE TABLE IF NOT EXISTS t_tax_category_config (
+    id BIGINT PRIMARY KEY,
+    seq_no VARCHAR(20) NOT NULL,
+    company_code VARCHAR(20) NULL,
+    tax_type VARCHAR(50) NOT NULL,
+    tax_category VARCHAR(50) NULL,
+    tax_basis VARCHAR(200) NULL,
+    collection_ratio DECIMAL(5,2) NULL,
+    tax_rate DECIMAL(10,6) NULL,
+    account_subject VARCHAR(200) NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    KEY idx_tax_category_company_code (company_code)
+);
+
+CREATE TABLE IF NOT EXISTS t_project_config (
+    id BIGINT PRIMARY KEY,
+    company_code VARCHAR(20) NOT NULL,
+    tax_type VARCHAR(50) NOT NULL,
+    tax_category VARCHAR(50) NULL,
+    project_name VARCHAR(200) NULL,
+    preferential_period VARCHAR(100) NOT NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    KEY idx_project_company_code (company_code)
+);
+
+CREATE TABLE IF NOT EXISTS t_vat_basic_item_config (
+    id BIGINT PRIMARY KEY,
+    item_seq INT NOT NULL,
+    company_code VARCHAR(20) NULL,
+    basic_item VARCHAR(200) NOT NULL,
+    is_split VARCHAR(1) NOT NULL,
+    is_display VARCHAR(1) NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    KEY idx_vat_basic_company_code (company_code)
+);
+
+CREATE TABLE IF NOT EXISTS t_vat_special_item_config (
+    id BIGINT PRIMARY KEY,
+    item_seq INT NOT NULL,
+    company_code VARCHAR(20) NOT NULL,
+    special_item VARCHAR(200) NOT NULL,
+    is_display VARCHAR(1) NOT NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    KEY idx_vat_special_company_code (company_code)
+);
+
+CREATE TABLE IF NOT EXISTS sys_user (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    username VARCHAR(100) NOT NULL,
+    user_code VARCHAR(50) NOT NULL,
+    account VARCHAR(50) NOT NULL,
+    avatar VARCHAR(100) NOT NULL,
+    search_str VARCHAR(200) NOT NULL,
+    dept_code VARCHAR(50) NOT NULL,
+    dept_name VARCHAR(50) NOT NULL,
+    division_code VARCHAR(50) NOT NULL,
+    division_name VARCHAR(50) NOT NULL,
+    locale VARCHAR(50) NOT NULL DEFAULT 'zh_CN',
+    is_in_service BOOLEAN NOT NULL DEFAULT TRUE,
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    UNIQUE KEY uk_sys_user_code (user_code),
+    KEY idx_sys_user_in_service (is_in_service),
+    KEY idx_sys_user_division_code (division_code),
+    KEY idx_sys_user_dept_code (dept_code)
+);
+
+CREATE TABLE IF NOT EXISTS t_user_permission (
+    id BIGINT PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    user_name VARCHAR(100) NOT NULL,
+    company_code VARCHAR(20) NOT NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    uk_permission_user_id_active VARCHAR(50) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN user_id ELSE NULL END) VIRTUAL,
+    uk_permission_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_permission_user_company_active (uk_permission_user_id_active, uk_permission_company_code_active),
+    KEY idx_permission_user (user_id),
+    KEY idx_permission_company (company_code)
+);
+
+CREATE TABLE IF NOT EXISTS t_ledger_run (
     id BIGINT PRIMARY KEY,
     ledger_id BIGINT NOT NULL,
     run_no INT NOT NULL,
@@ -75,28 +184,25 @@ CREATE TABLE IF NOT EXISTS t_tax_ledger_run (
     status VARCHAR(20) NOT NULL,
     current_batch INT NULL,
     input_fingerprint VARCHAR(128) NOT NULL,
-    template_code VARCHAR(100) NULL,
-    template_version VARCHAR(50) NULL,
-    template_checksum VARCHAR(128) NULL,
     error_code VARCHAR(100) NULL,
     error_msg VARCHAR(1000) NULL,
     started_at DATETIME NULL,
     ended_at DATETIME NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
     uk_run_ledger_id_active BIGINT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN ledger_id ELSE NULL END) VIRTUAL,
     uk_run_no_active INT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN run_no ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_ledger_run (uk_run_ledger_id_active, uk_run_no_active),
-    KEY idx_tax_ledger_run_status (status),
-    KEY idx_tax_ledger_run_ledger (ledger_id)
+    UNIQUE KEY uk_ledger_run_active (uk_run_ledger_id_active, uk_run_no_active),
+    KEY idx_ledger_run_status (status),
+    KEY idx_ledger_run_ledger_id (ledger_id)
 );
 
-CREATE TABLE IF NOT EXISTS t_tax_ledger_run_stage (
+CREATE TABLE IF NOT EXISTS t_ledger_run_stage (
     id BIGINT PRIMARY KEY,
     run_id BIGINT NOT NULL,
     batch_no INT NOT NULL,
@@ -109,147 +215,37 @@ CREATE TABLE IF NOT EXISTS t_tax_ledger_run_stage (
     confirm_time DATETIME NULL,
     started_at DATETIME NULL,
     ended_at DATETIME NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
     is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
     uk_stage_run_id_active BIGINT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN run_id ELSE NULL END) VIRTUAL,
     uk_stage_batch_no_active INT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN batch_no ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_run_stage (uk_stage_run_id_active, uk_stage_batch_no_active),
-    KEY idx_tax_run_stage_status (status)
+    UNIQUE KEY uk_ledger_run_stage_active (uk_stage_run_id_active, uk_stage_batch_no_active),
+    KEY idx_ledger_run_stage_status (status),
+    KEY idx_ledger_run_stage_run_id (run_id)
 );
 
-CREATE TABLE IF NOT EXISTS t_tax_ledger_run_artifact (
+CREATE TABLE IF NOT EXISTS t_ledger_run_artifact (
     id BIGINT PRIMARY KEY,
     run_id BIGINT NOT NULL,
     batch_no INT NOT NULL,
     artifact_type VARCHAR(20) NOT NULL,
-    artifact_name VARCHAR(300) NOT NULL,
+    file_name VARCHAR(300) NOT NULL,
     blob_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NULL,
     checksum VARCHAR(128) NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
+    is_latest TINYINT NOT NULL DEFAULT 1,
     is_deleted TINYINT NOT NULL DEFAULT 0,
-    KEY idx_tax_run_artifact_run (run_id),
-    KEY idx_tax_run_artifact_batch (run_id, batch_no)
-);
-
-CREATE TABLE IF NOT EXISTS t_tax_company_code_config (
-    id BIGINT PRIMARY KEY,
-    company_code VARCHAR(20) NOT NULL,
-    company_name VARCHAR(200) NOT NULL,
-    finance_bp_ad VARCHAR(100) NULL,
-    finance_bp_name VARCHAR(100) NULL,
-    finance_bp_email VARCHAR(200) NULL,
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
-    is_deleted TINYINT NOT NULL DEFAULT 0,
-    uk_company_code_config_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_company_code_config (uk_company_code_config_active)
-);
-
-CREATE TABLE IF NOT EXISTS t_tax_category_config (
-    id BIGINT PRIMARY KEY,
-    seq_no VARCHAR(20) NOT NULL,
-    company_code VARCHAR(20) NULL,
-    tax_type VARCHAR(50) NOT NULL,
-    tax_category VARCHAR(50) NULL,
-    tax_basis VARCHAR(200) NULL,
-    collection_ratio DECIMAL(5, 2) NULL,
-    tax_rate DECIMAL(10, 6) NULL,
-    account_subject VARCHAR(200) NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
-    is_deleted TINYINT NOT NULL DEFAULT 0,
-    KEY idx_tax_category_company_code (company_code)
-);
-
-CREATE TABLE IF NOT EXISTS t_tax_project_config (
-    id BIGINT PRIMARY KEY,
-    company_code VARCHAR(20) NOT NULL,
-    tax_type VARCHAR(50) NOT NULL,
-    tax_category VARCHAR(50) NULL,
-    project_name VARCHAR(200) NULL,
-    preferential_period VARCHAR(100) NOT NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
-    is_deleted TINYINT NOT NULL DEFAULT 0,
-    KEY idx_tax_project_company_code (company_code)
-);
-
-CREATE TABLE IF NOT EXISTS t_tax_vat_basic_item_config (
-    id BIGINT PRIMARY KEY,
-    item_seq INT NOT NULL,
-    company_code VARCHAR(20) NULL,
-    basic_item VARCHAR(200) NOT NULL,
-    is_split VARCHAR(1) NOT NULL,
-    is_display VARCHAR(1) NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
-    is_deleted TINYINT NOT NULL DEFAULT 0,
-    KEY idx_tax_vat_basic_company_code (company_code)
-);
-
-CREATE TABLE IF NOT EXISTS t_tax_vat_special_item_config (
-    id BIGINT PRIMARY KEY,
-    item_seq INT NOT NULL,
-    company_code VARCHAR(20) NOT NULL,
-    special_item VARCHAR(200) NOT NULL,
-    is_display VARCHAR(1) NOT NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
-    is_deleted TINYINT NOT NULL DEFAULT 0,
-    KEY idx_tax_vat_special_company_code (company_code)
-);
-
-CREATE TABLE IF NOT EXISTS t_tax_user_permission (
-    id BIGINT PRIMARY KEY,
-    user_id VARCHAR(100) NOT NULL,
-    user_name VARCHAR(100) NOT NULL,
-    employee_id VARCHAR(50) NOT NULL,
-    permission_level VARCHAR(20) NOT NULL,
-    company_code VARCHAR(20) NULL,
-    granted_by VARCHAR(100) NULL,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    create_by VARCHAR(100) NULL,
-    create_by_name VARCHAR(100) NULL,
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    update_by VARCHAR(100) NULL,
-    update_by_name VARCHAR(100) NULL,
-    is_deleted TINYINT NOT NULL DEFAULT 0,
-    uk_permission_user_id_active VARCHAR(100) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN user_id ELSE NULL END) VIRTUAL,
-    uk_permission_company_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN company_code ELSE NULL END) VIRTUAL,
-    uk_permission_level_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN permission_level ELSE NULL END) VIRTUAL,
-    uk_permission_employee_id_active VARCHAR(50) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN employee_id ELSE NULL END) VIRTUAL,
-    UNIQUE KEY uk_tax_permission_user_company_level (uk_permission_user_id_active, uk_permission_company_code_active, uk_permission_level_active),
-    UNIQUE KEY uk_tax_permission_employee_company (uk_permission_employee_id_active, uk_permission_company_code_active),
-    KEY idx_tax_permission_user (user_id),
-    KEY idx_tax_permission_company (company_code)
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    KEY idx_ledger_run_artifact_run_id (run_id),
+    KEY idx_ledger_run_artifact_run_batch (run_id, batch_no)
 );

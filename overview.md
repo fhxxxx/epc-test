@@ -185,6 +185,7 @@ src/main/java/com/xxx/taxledger/
 CompanyCodeConfig (1) ──< FileRecord (N)
 CompanyCodeConfig (1) ──< LedgerRecord (N)
 CompanyCodeConfig (1) ──< UserPermission (N)
+SysUser (1) ──< UserPermission (N)   # employee_id -> user_code
 
 TaxCategoryConfig (N)
 ProjectConfig (N)
@@ -194,37 +195,47 @@ VatSpecialItemConfig (N)
 
 ### 3.2 表结构
 
-#### 3.2.1 公司代码主数据表 `t_tax_company_code_config`
+#### 3.2.1 公司代码主数据表 `t_company_code_config`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | company_code | VARCHAR(20) | 公司代码 | UNIQUE, NOT NULL |
 | company_name | VARCHAR(200) | 公司名称 | NOT NULL |
 | finance_bp_ad | VARCHAR(100) | 财务BP AD号 | |
 | finance_bp_name | VARCHAR(100) | 财务BP姓名 | |
 | finance_bp_email | VARCHAR(200) | 财务BP邮箱 | |
-| created_by | VARCHAR(100) | 创建人 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_by | VARCHAR(100) | 更新人 | |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
-| deleted | TINYINT | 逻辑删除 | DEFAULT 0 |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
+
+**唯一约束实现**（软删兼容）：
+- 业务唯一键：`company_code`
+- 虚拟生成列：`uk_company_code_active = CASE WHEN is_deleted=0 THEN company_code ELSE NULL END`
+- 唯一索引：`UNIQUE(uk_company_code_active)`
 
 #### 3.2.2 文件记录表 `t_file_record`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | company_code | VARCHAR(20) | 公司代码 | NOT NULL, IDX |
 | year_month | VARCHAR(7) | 月份(格式:2026-01) | NOT NULL, IDX |
 | file_name | VARCHAR(300) | 原始文件名 | NOT NULL |
 | file_category | VARCHAR(50) | 文件类别 | NOT NULL |
-| file_source | VARCHAR(20) | 文件来源 | NOT NULL |
 | blob_path | VARCHAR(500) | Azure Blob存储路径 | NOT NULL |
 | file_size | BIGINT | 文件大小(字节) | |
-| upload_user | VARCHAR(100) | 上传人 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| deleted | TINYINT | 逻辑删除 | DEFAULT 0 |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 **file_category 枚举值**：
 
@@ -246,13 +257,18 @@ VatSpecialItemConfig (N)
 | DL_OTHER | 其他科目明细 | 数据湖 |
 
 
-**唯一约束**：`UNIQUE(company_code, year_month, file_category, file_source)`，同键重复上传时覆盖旧记录（逻辑删除旧记录）。
+**唯一约束**：业务唯一键为 `(company_code, year_month, file_category)`；物理实现采用“虚拟生成列 + 唯一索引”（仅约束 `is_deleted=0` 的有效数据），同键重复上传时覆盖旧记录（逻辑删除旧记录）。
+**虚拟生成列与唯一索引**：
+- `uk_file_company_code_active = CASE WHEN is_deleted=0 THEN company_code ELSE NULL END`
+- `uk_file_year_month_active = CASE WHEN is_deleted=0 THEN year_month ELSE NULL END`
+- `uk_file_category_active = CASE WHEN is_deleted=0 THEN file_category ELSE NULL END`
+- `UNIQUE(uk_file_company_code_active, uk_file_year_month_active, uk_file_category_active)`
 
 #### 3.2.3 台账记录表 `t_ledger_record`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | company_code | VARCHAR(20) | 公司代码 | NOT NULL, IDX |
 | year_month | VARCHAR(7) | 台账月份 | NOT NULL, IDX |
 | ledger_name | VARCHAR(300) | 台账文件名 | NOT NULL |
@@ -261,12 +277,21 @@ VatSpecialItemConfig (N)
 | generate_status | VARCHAR(20) | 生成状态 | DEFAULT PENDING |
 | status_msg | VARCHAR(500) | 状态描述/错误信息 | |
 | generated_at | DATETIME | 生成完成时间 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| deleted | TINYINT | 逻辑删除 | DEFAULT 0 |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 **generate_status 枚举值**：`PENDING`(生成中) / `SUCCESS`(成功) / `FAILED`(失败)
 
-**唯一约束**：`UNIQUE(company_code, year_month)`，每个公司每月只能有一条台账记录（重新生成则覆盖）
+**唯一约束**：业务唯一键为 `(company_code, year_month)`；物理实现采用“虚拟生成列 + 唯一索引”（仅约束 `is_deleted=0`），每个公司每月只能有一条有效台账记录（重新生成则覆盖）。
+**虚拟生成列与唯一索引**：
+- `uk_ledger_company_code_active = CASE WHEN is_deleted=0 THEN company_code ELSE NULL END`
+- `uk_ledger_year_month_active = CASE WHEN is_deleted=0 THEN year_month ELSE NULL END`
+- `UNIQUE(uk_ledger_company_code_active, uk_ledger_year_month_active)`
 
 #### 3.2.4 公司主数据来源约束（实现补充）
 
@@ -278,7 +303,7 @@ VatSpecialItemConfig (N)
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | seq_no | VARCHAR(20) | 序号（如"1"、"1.1"） | NOT NULL |
 | company_code | VARCHAR(20) | 公司代码（可为空，表示通用） | IDX |
 | tax_type | VARCHAR(50) | 税种 | NOT NULL |
@@ -287,76 +312,132 @@ VatSpecialItemConfig (N)
 | collection_ratio | DECIMAL(5,2) | 征收比例 | |
 | tax_rate | DECIMAL(10,6) | 税率 | |
 | account_subject | VARCHAR(200) | 会计科目 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 #### 3.2.6 项目配置表 `t_project_config`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | company_code | VARCHAR(20) | 公司代码 | NOT NULL |
 | tax_type | VARCHAR(50) | 税种 | NOT NULL |
 | tax_category | VARCHAR(50) | 税目 | |
 | project_name | VARCHAR(200) | 项目名称 | |
 | preferential_period | VARCHAR(100) | 所属优惠期 | NOT NULL |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 #### 3.2.7 增值税变动表基础条目配置表 `t_vat_basic_item_config`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | item_seq | INT | 条目序号 | NOT NULL |
 | company_code | VARCHAR(20) | 公司代码（可为空，表示通用） | IDX |
 | basic_item | VARCHAR(200) | 基础条目 | NOT NULL |
 | is_split | VARCHAR(1) | 是否拆分(Y/N) | NOT NULL |
 | is_display | VARCHAR(1) | 是否显示(Y/N) | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 #### 3.2.8 睿景景程增值税变动表特殊条目配置表 `t_vat_special_item_config`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | item_seq | INT | 条目序号 | NOT NULL |
 | company_code | VARCHAR(20) | 公司代码（必填，多选） | NOT NULL |
 | special_item | VARCHAR(200) | 特殊条目 | NOT NULL |
 | is_display | VARCHAR(1) | 是否显示(Y/N) | NOT NULL |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
-#### 3.2.9 用户权限表 `t_user_permission`
+#### 3.2.9 员工主数据表 `sys_user`（同步）
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
-| user_id | VARCHAR(100) | 用户ID（Okta userId或工号） | NOT NULL, IDX |
-| user_name | VARCHAR(100) | 用户姓名 | NOT NULL |
-| employee_id | VARCHAR(50) | 工号 | NOT NULL, UNI |
+| id | BIGINT UNSIGNED | 主键ID | PK |
+| username | VARCHAR(100) | 用户姓名（含域账号展示） | NOT NULL |
+| user_code | VARCHAR(50) | 用户编号/工号 | NOT NULL, UNIQUE |
+| account | VARCHAR(50) | 域账号 | NOT NULL |
+| avatar | VARCHAR(100) | 头像地址 | NOT NULL |
+| search_str | VARCHAR(200) | 搜索串（工号/账号/拼音等） | NOT NULL |
+| dept_code | VARCHAR(50) | 部门编号 | NOT NULL, IDX |
+| dept_name | VARCHAR(50) | 部门名称 | NOT NULL |
+| division_code | VARCHAR(50) | 体系编号 | NOT NULL, IDX |
+| division_name | VARCHAR(50) | 体系名称 | NOT NULL |
+| locale | VARCHAR(50) | 语言 | NOT NULL, DEFAULT 'zh_CN' |
+| is_in_service | BOOLEAN | 在职标记 | NOT NULL, DEFAULT TRUE, IDX |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
+
+**说明**：
+- 本表用于承接“全量同步用户”接口落库结果，作为权限授权时的员工选择数据源。
+- 业务上按 `user_code`（工号）识别唯一员工，`account` 用于登录账号信息补充。
+
+#### 3.2.10 用户权限表 `t_user_permission`
+
+| 字段 | 类型 | 说明 | 约束 |
+|------|------|------|------|
+| id | BIGINT | 主键 | PK |
+| user_id | VARCHAR(50) | 用户工号（对应 `sys_user.user_code`） | NOT NULL, IDX |
+| user_name | VARCHAR(100) | 用户姓名（对应 `sys_user.username`） | NOT NULL |
 | company_code | VARCHAR(20) | 公司代码 | NOT NULL, IDX |
-| granted_by | VARCHAR(100) | 授权人工号 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 **模型说明**：
 - 本表仅保存“用户-公司”访问映射，不再区分 `permission_level`。
 - 表中存在一条记录，表示该用户可访问该公司的业务页面（不含5个配置页），并可给他人分配该公司的访问权限。
 - 超级管理员不落表，统一由 `application.yml` 配置维护。
+- 关联 `sys_user`：`t_user_permission.user_id = sys_user.user_code`，`t_user_permission.user_name = sys_user.username`。
 
 **约束**：
-- `(employee_id, company_code)` 联合唯一，同一用户对同一公司只有一条权限记录
+- `(user_id, company_code)` 联合唯一，同一用户对同一公司只有一条权限记录
 - `company_code` 必填
-- `UNIQUE(user_id, company_code)`
+- 物理实现采用“虚拟生成列 + 唯一索引”（仅约束 `is_deleted=0`）
+**虚拟生成列与唯一索引**：
+- `uk_permission_user_id_active = CASE WHEN is_deleted=0 THEN user_id ELSE NULL END`
+- `uk_permission_company_code_active = CASE WHEN is_deleted=0 THEN company_code ELSE NULL END`
+- `UNIQUE(uk_permission_user_id_active, uk_permission_company_code_active)`
 
 ---
 
-#### 3.2.10 台账运行实例表 `t_ledger_run`
+#### 3.2.11 台账运行实例表 `t_ledger_run`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | ledger_id | BIGINT | 关联主记录ID（t_ledger_record.id） | NOT NULL, IDX |
 | run_no | INT | 同一ledger下的运行序号 | NOT NULL |
 | trigger_type | VARCHAR(20) | 触发类型（MANUAL/RETRY/RESUME） | NOT NULL |
@@ -368,16 +449,25 @@ VatSpecialItemConfig (N)
 | error_msg | VARCHAR(1000) | 失败错误信息 | |
 | started_at | DATETIME | 运行开始时间 | |
 | ended_at | DATETIME | 运行结束时间 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
-**约束建议**：`UNIQUE(ledger_id, run_no)`，同一ledger按运行序号递增。
+**约束实现**（软删兼容）：
+- 业务唯一键：`(ledger_id, run_no)`
+- `uk_run_ledger_id_active = CASE WHEN is_deleted=0 THEN ledger_id ELSE NULL END`
+- `uk_run_no_active = CASE WHEN is_deleted=0 THEN run_no ELSE NULL END`
+- `UNIQUE(uk_run_ledger_id_active, uk_run_no_active)`
 
-#### 3.2.11 台账运行阶段表 `t_ledger_run_stage`
+#### 3.2.12 台账运行阶段表 `t_ledger_run_stage`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | run_id | BIGINT | 关联运行实例ID | NOT NULL, IDX |
 | batch_no | INT | 批次号（1~4） | NOT NULL |
 | status | VARCHAR(20) | 阶段状态（PENDING/RUNNING/SUCCESS/FAILED/CONFIRMED/SKIPPED/INVALIDATED） | NOT NULL, IDX |
@@ -389,16 +479,25 @@ VatSpecialItemConfig (N)
 | confirm_time | DATETIME | 人工确认时间 | |
 | started_at | DATETIME | 阶段开始时间 | |
 | ended_at | DATETIME | 阶段结束时间 | |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
-| updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
-**约束建议**：`UNIQUE(run_id, batch_no)`。
+**约束实现**（软删兼容）：
+- 业务唯一键：`(run_id, batch_no)`
+- `uk_stage_run_id_active = CASE WHEN is_deleted=0 THEN run_id ELSE NULL END`
+- `uk_stage_batch_no_active = CASE WHEN is_deleted=0 THEN batch_no ELSE NULL END`
+- `UNIQUE(uk_stage_run_id_active, uk_stage_batch_no_active)`
 
-#### 3.2.12 台账运行产物表 `t_ledger_run_artifact`
+#### 3.2.13 台账运行产物表 `t_ledger_run_artifact`
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
-| id | BIGINT | 主键 | PK, AUTO_INCREMENT |
+| id | BIGINT | 主键 | PK |
 | run_id | BIGINT | 关联运行实例ID | NOT NULL, IDX |
 | batch_no | INT | 产物所属批次（1~4，最终文件可记为4） | NOT NULL |
 | artifact_type | VARCHAR(20) | 产物类型（INTERMEDIATE/FINAL/DEBUG） | NOT NULL |
@@ -407,19 +506,18 @@ VatSpecialItemConfig (N)
 | file_size | BIGINT | 文件大小（字节） | |
 | checksum | VARCHAR(128) | 文件校验值（建议SHA-256） | |
 | is_latest | TINYINT | 是否该批最新快照 | DEFAULT 1 |
-| created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| is_deleted | TINYINT | 逻辑删除 | NOT NULL, DEFAULT 0 |
+| create_time | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
+| create_by | VARCHAR(100) | 创建人工号 | DEFAULT '' |
+| create_by_name | VARCHAR(100) | 创建人姓名 | DEFAULT '' |
+| update_time | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE |
+| update_by | VARCHAR(100) | 更新人工号 | DEFAULT '' |
+| update_by_name | VARCHAR(100) | 更新人姓名 | DEFAULT '' |
 
 **快照保留策略**：中间快照与最终快照永久保留（不做TTL清理）。
 
 **说明**：`t_ledger_record` 作为“主记录（ledger）”，仍保持 `UNIQUE(company_code, year_month)`；`t_ledger_run*` 用于记录每次运行、分批状态和快照。
 
-### 3.3 软删与唯一约束并存策略（实现补充）
-
-为避免“逻辑删除后重复创建同业务键”引发唯一键冲突，软删表建议采用“虚拟生成列 + 唯一索引”：
-
-- 原则：唯一性仅约束 `is_deleted=0` 的有效数据。
-- 方案：新增虚拟列 `uk_xxx_active = CASE WHEN is_deleted=0 THEN business_key ELSE NULL END`，并对虚拟列建唯一索引。
-- 适用：公司代码配置、文件唯一键、台账主记录唯一键、权限唯一键等软删表。
 ## 四、API接口设计
 
 ### 4.1 接口规范
@@ -455,6 +553,7 @@ VatSpecialItemConfig (N)
 **设计约束补充**：
 - 不再提供独立 `/companies` 写接口，避免与配置表双写导致主数据不一致。
 - 业务页面读取公司列表时，统一调用 `/tax-ledger/config/company-code`。
+- 删除公司代码时需二次告警确认，并明确提示将删除该公司关联的业务数据（见6.7交互规范）。
 
 #### 4.2.3 文件管理模块
 
@@ -1174,6 +1273,11 @@ public enum AccountTypeEnum {
 - 分页：展示总条数与页码，分页文案中文化（示例：`共X条`、`10/页`）。
 - 字段约束：仅“公司代码配置”页允许手工输入公司代码；其余配置页中的 `companyCode` 字段必须使用下拉选择。
 - 下拉数据源：实时查询 `/tax-ledger/config/company-code`，禁止自由输入，确保公司代码只来自主数据表。
+- 公司代码配置页删除告警弹窗建议文案：
+  - 标题：`确认删除该公司代码？`
+  - 正文：`删除后将一并删除该公司关联的文件记录、数据湖拉取结果、台账记录/运行记录/运行产物、权限映射及配置关联数据，此操作不可恢复。`
+  - 二次确认：`请输入公司代码 {{companyCode}} 以确认删除`
+  - 按钮：`取消` / `确认删除（不可恢复）`
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -1947,13 +2051,4 @@ public class PermissionInterceptor implements HandlerInterceptor {
     }
 }
 ```
-
-| 序号 | 事项 | 状态 | 备注 |
-|------|------|------|------|
-| 1 | 前端技术栈确认 | 待确认 | 建议与现有脚手架一致 |
-| 2 | 增值税变动表附表的详细取值逻辑 | ✅ 已确认 | 按PL附表的"拆分依据"列精确匹配，2320/2355按6种税率拆分，其他公司按基础条目计算 |
-| 3 | 预开票收入计提冲回统计的详细逻辑 | ✅ 已确认 | 用户上传的文件，系统直接取用，无需计算 |
-| 4 | 1月份台账生成时上年度12月台账数据来源 | ✅ 已确认 | 系统不支持跨年数据处理，1月份期初留抵进项税取0 |
-| 5 | 台账Excel的具体格式/样式要求 | ✅ 已确认 | 需要与现有Excel模板格式完全一致 |
-
 

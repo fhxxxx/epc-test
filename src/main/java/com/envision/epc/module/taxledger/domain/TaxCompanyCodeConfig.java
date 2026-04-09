@@ -10,7 +10,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_tax_company_code_config")
+@TableName("t_company_code_config")
 public class TaxCompanyCodeConfig extends AuditingEntity {
     /** 公司代码 */
     private String companyCode;

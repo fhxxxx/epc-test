@@ -4,6 +4,7 @@ import com.envision.epc.module.taxledger.application.command.GrantPermissionComm
 import com.envision.epc.module.taxledger.application.service.TaxPermissionService;
 import com.envision.epc.module.taxledger.domain.TaxUserPermission;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -45,7 +46,10 @@ public class TaxPermissionController {
      * 撤销授权
      */
     @DeleteMapping
-    public void revoke(@RequestParam String employeeId, @RequestParam(required = false) String companyCode) {
-        permissionService.revoke(employeeId, companyCode);
+    public void revoke(@RequestParam(required = false) String userId,
+                       @RequestParam(required = false) String employeeId,
+                       @RequestParam String companyCode) {
+        String finalUserId = StringUtils.hasText(userId) ? userId : employeeId;
+        permissionService.revoke(finalUserId, companyCode);
     }
 }

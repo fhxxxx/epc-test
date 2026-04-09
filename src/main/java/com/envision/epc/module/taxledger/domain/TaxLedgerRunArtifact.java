@@ -6,24 +6,36 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 台账运行产物记录（中间快照/最终文件）
+ * 运行产物（中间产物 / 最终台账）
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_tax_ledger_run_artifact")
+@TableName("t_ledger_run_artifact")
 public class TaxLedgerRunArtifact extends AuditingEntity {
-    /** 运行ID */
+    /** 运行 ID */
     private Long runId;
-    /** 所属批次 */
+
+    /** 批次号 */
     private Integer batchNo;
+
     /** 产物类型 */
     private LedgerArtifactTypeEnum artifactType;
-    /** 产物名称 */
-    private String artifactName;
-    /** Blob路径 */
+
+    /** 文件名 */
+    private String fileName;
+
+    /** Blob 路径 */
     private String blobPath;
-    /** 产物校验值 */
+
+    /** 文件大小（字节） */
+    private Long fileSize;
+
+    /** 校验值 */
     private String checksum;
-    /** 逻辑删除标记：0否/1是 */
+
+    /** 是否当前最新：0-否，1-是 */
+    private Integer isLatest;
+
+    /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;
 }

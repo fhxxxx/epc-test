@@ -6,20 +6,19 @@ import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.infrastructure.security.SecurityUtils;
 import com.envision.epc.module.taxledger.application.command.GrantPermissionCommand;
 import com.envision.epc.module.taxledger.common.TaxLedgerProperties;
-import com.envision.epc.module.taxledger.domain.PermissionLevelEnum;
 import com.envision.epc.module.taxledger.domain.TaxUserPermission;
 import com.envision.epc.module.taxledger.infrastructure.TaxUserPermissionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
- * 权限服务（超级管理员 + 公司级权限）
+ * 权限服务（超级管理员 + 公司用户映射）
  */
 @Service
 @RequiredArgsConstructor
@@ -36,29 +35,27 @@ public class TaxPermissionService {
     public List<TaxUserPermission> listByCompany(String companyCode) {
         return permissionMapper.selectList(new LambdaQueryWrapper<TaxUserPermission>()
                 .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(companyCode != null, TaxUserPermission::getCompanyCode, companyCode));
+                .eq(StringUtils.hasText(companyCode), TaxUserPermission::getCompanyCode, companyCode));
     }
 
     /**
-     * 授权（同员工同公司先撤销再授权）
+     * 授权（同用户同公司先撤销再授权）
      */
     public TaxUserPermission grant(GrantPermissionCommand command) {
         validate(command);
-        revoke(command.getEmployeeId(), command.getCompanyCode());
+        revoke(command.getUserId(), command.getCompanyCode());
+
         TaxUserPermission permission = new TaxUserPermission();
         permission.setUserId(command.getUserId());
         permission.setUserName(command.getUserName());
-        permission.setEmployeeId(command.getEmployeeId());
-        permission.setPermissionLevel(command.getPermissionLevel());
         permission.setCompanyCode(command.getCompanyCode());
-        permission.setGrantedBy(currentUserCode());
         permission.setIsDeleted(0);
         permissionMapper.insert(permission);
         return permission;
     }
 
     /**
-     * 批量授权（事务内逐条授权）
+     * 批量授权
      */
     @Transactional(rollbackFor = Exception.class)
     public List<TaxUserPermission> grantBatch(List<GrantPermissionCommand> commands) {
@@ -75,11 +72,16 @@ public class TaxPermissionService {
     /**
      * 撤销授权（逻辑删除）
      */
-    public void revoke(String employeeId, String companyCode) {
+    public void revoke(String userId, String companyCode) {
+        if (!StringUtils.hasText(userId) || !StringUtils.hasText(companyCode)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "userId and companyCode are required");
+        }
+
         List<TaxUserPermission> existed = permissionMapper.selectList(new LambdaQueryWrapper<TaxUserPermission>()
                 .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(TaxUserPermission::getEmployeeId, employeeId)
-                .eq(Objects.nonNull(companyCode), TaxUserPermission::getCompanyCode, companyCode));
+                .eq(TaxUserPermission::getUserId, userId)
+                .eq(TaxUserPermission::getCompanyCode, companyCode));
+
         existed.forEach(item -> {
             item.setIsDeleted(1);
             permissionMapper.updateById(item);
@@ -91,16 +93,16 @@ public class TaxPermissionService {
      */
     public void checkCompanyAccess(String companyCode) {
         String currentUserCode = currentUserCode();
-        // TODO: Temporary bypass for auth failure (code=10002). Remove after permission data is fixed.
         if (isTempBypassUser(currentUserCode)) {
             return;
         }
         if (isSuperAdmin(currentUserCode)) {
             return;
         }
+
         boolean hasAccess = permissionMapper.selectCount(new LambdaQueryWrapper<TaxUserPermission>()
                 .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(TaxUserPermission::getEmployeeId, currentUserCode)
+                .eq(TaxUserPermission::getUserId, currentUserCode)
                 .eq(TaxUserPermission::getCompanyCode, companyCode)) > 0;
         if (!hasAccess) {
             throw new BizException(ErrorCode.AUTH_ACCESS_DENIED, "No permission for company " + companyCode);
@@ -119,39 +121,31 @@ public class TaxPermissionService {
      * 是否超级管理员
      */
     public boolean isSuperAdmin(String userCode) {
-        if (userCode == null) {
-            return false;
-        }
-        if (properties.getSuperAdminUserCodes().contains(userCode)) {
-            return true;
-        }
-        return permissionMapper.selectCount(new LambdaQueryWrapper<TaxUserPermission>()
-                .eq(TaxUserPermission::getIsDeleted, 0)
-                .eq(TaxUserPermission::getEmployeeId, userCode)
-                .eq(TaxUserPermission::getPermissionLevel, PermissionLevelEnum.SUPER_ADMIN)) > 0;
+        return StringUtils.hasText(userCode) && properties.getSuperAdminUserCodes().contains(userCode);
     }
 
     /**
-     * 获取当前登录人工号；后台场景兜底system
+     * 获取当前登录人工号
      */
     public String currentUserCode() {
         try {
             return SecurityUtils.getCurrentUserCode();
         } catch (Exception ignored) {
-            // TODO: Temporary fallback for local auth failure. Remove after auth chain is fixed.
             return TEMP_BYPASS_USER_CODE;
         }
     }
 
     /**
-     * 授权命令合法性校验
+     * 授权参数校验
      */
     private static void validate(GrantPermissionCommand command) {
-        if (command.getPermissionLevel() == PermissionLevelEnum.SUPER_ADMIN && command.getCompanyCode() != null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "SUPER_ADMIN must not bind company code");
+        if (command == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "Grant command must not be null");
         }
-        if (command.getPermissionLevel() != PermissionLevelEnum.SUPER_ADMIN && command.getCompanyCode() == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Company level permission requires company code");
+        if (!StringUtils.hasText(command.getUserId())
+                || !StringUtils.hasText(command.getUserName())
+                || !StringUtils.hasText(command.getCompanyCode())) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "userId/userName/companyCode are required");
         }
     }
 }

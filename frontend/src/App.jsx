@@ -423,8 +423,8 @@ function FilePanel({ companyCode }) {
         dataSource={Array.isArray(rows) ? rows : []}
         columns={[
           { title: "类别", dataIndex: "fileCategory", render: (v) => <Tag>{v}</Tag> },
-          { title: "来源", dataIndex: "fileSource" },
           { title: "文件名", dataIndex: "fileName" },
+          { title: "文件大小", dataIndex: "fileSize", render: (v) => (v ? `${v} B` : "-") },
           {
             title: "操作",
             render: (_, row) => (
@@ -527,19 +527,6 @@ function PermissionPanel({ companyCode }) {
   const [companyOptions, setCompanyOptions] = useState([]);
   const [companyLoading, setCompanyLoading] = useState(false);
   const [form] = Form.useForm();
-  const permissionLevel = Form.useWatch("permissionLevel", form);
-
-  const levelOptions = [
-    { value: "SUPER_ADMIN", label: "超级管理员" },
-    { value: "COMPANY_ADMIN", label: "公司管理员" },
-    { value: "COMPANY_USER", label: "公司用户" }
-  ];
-
-  const levelTextMap = {
-    SUPER_ADMIN: "超级管理员",
-    COMPANY_ADMIN: "公司管理员",
-    COMPANY_USER: "公司用户"
-  };
 
   const load = async () => {
     try {
@@ -681,17 +668,14 @@ function PermissionPanel({ companyCode }) {
                 message.warning("请至少选择一名员工");
                 return;
               }
-              const permissionLevel = values.permissionLevel;
-              const companyCodeValue = permissionLevel === "SUPER_ADMIN" ? null : values.companyCode;
-              if (permissionLevel !== "SUPER_ADMIN" && !companyCodeValue) {
-                message.warning("公司级权限必须选择公司代码");
+              const companyCodeValue = values.companyCode;
+              if (!companyCodeValue) {
+                message.warning("请选择公司代码");
                 return;
               }
               const payload = selectedUsers.map((item) => ({
-                userId: item.account || item.userCode,
+                userId: item.userCode,
                 userName: item.username,
-                employeeId: item.userCode,
-                permissionLevel,
                 companyCode: companyCodeValue
               }));
               await client.post("/tax-ledger/permissions/batch", payload);
@@ -708,7 +692,7 @@ function PermissionPanel({ companyCode }) {
           }}
         >
           <Row gutter={12}>
-            <Col span={12}>
+            <Col span={14}>
               <Form.Item
                 name="employeePick"
                 label="选择员工"
@@ -756,23 +740,17 @@ function PermissionPanel({ companyCode }) {
                 />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={10}>
               <Form.Item
-                name="permissionLevel"
-                label="权限级别"
-                rules={[{ required: true, message: "请选择权限级别" }]}
+                name="companyCode"
+                label="公司代码"
+                rules={[{ required: true, message: "请选择公司代码" }]}
               >
-                <Select options={levelOptions} placeholder="请选择级别" />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="companyCode" label="公司代码">
                 <Select
                   showSearch
                   allowClear
-                  placeholder="超级管理员可留空"
+                  placeholder="请选择公司代码"
                   loading={companyLoading}
-                  disabled={permissionLevel === "SUPER_ADMIN"}
                   options={companyOptions}
                   filterOption={false}
                   onSearch={loadCompanyOptions}
@@ -806,9 +784,8 @@ function PermissionPanel({ companyCode }) {
         rowKey="id"
         dataSource={Array.isArray(rows) ? rows : []}
         columns={[
-          { title: "工号", dataIndex: "employeeId" },
+          { title: "用户编码", dataIndex: "userId" },
           { title: "姓名", dataIndex: "userName" },
-          { title: "级别", dataIndex: "permissionLevel", render: (v) => <Tag>{levelTextMap[v] || v}</Tag> },
           { title: "公司代码", dataIndex: "companyCode" },
           {
             title: "操作",
@@ -816,14 +793,14 @@ function PermissionPanel({ companyCode }) {
               <Popconfirm
                 overlayClassName="pretty-popconfirm"
                 title="确认撤销该权限？"
-                description={`将撤销员工 ${row.employeeId} 的权限绑定。`}
+                description={`将撤销用户 ${row.userId} 的权限绑定。`}
                 okText="确认撤销"
                 cancelText="取消"
                 okButtonProps={{ danger: true }}
                 onConfirm={async () => {
                   try {
                     await client.delete("/tax-ledger/permissions", {
-                      params: { employeeId: row.employeeId, companyCode: row.companyCode }
+                      params: { userId: row.userId, companyCode: row.companyCode }
                     });
                     message.success("撤销成功");
                     load();

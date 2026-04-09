@@ -8,34 +8,45 @@ import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
 
 /**
- * 台账运行的批次阶段记录
+ * 运行阶段记录
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("t_tax_ledger_run_stage")
+@TableName("t_ledger_run_stage")
 public class TaxLedgerRunStage extends AuditingEntity {
-    /** 运行ID */
+    /** 运行 ID */
     private Long runId;
+
     /** 批次号 */
     private Integer batchNo;
+
     /** 阶段状态 */
     private LedgerRunStageStatusEnum status;
-    /** 应生成sheet数量 */
+
+    /** 预期生成 sheet 数 */
     private Integer sheetCountTotal;
-    /** 成功sheet数量 */
+
+    /** 成功 sheet 数 */
     private Integer sheetCountSuccess;
-    /** 依赖批次描述 */
+
+    /** 依赖阶段 */
     private String dependsOn;
-    /** 阶段失败信息 */
+
+    /** 错误信息 */
     private String errorMsg;
-    /** 人工确认人工号 */
+
+    /** 确认用户 */
     private String confirmUser;
-    /** 人工确认时间 */
+
+    /** 确认时间 */
     private LocalDateTime confirmTime;
-    /** 阶段开始时间 */
+
+    /** 开始时间 */
     private LocalDateTime startedAt;
-    /** 阶段结束时间 */
+
+    /** 结束时间 */
     private LocalDateTime endedAt;
-    /** 逻辑删除标记：0否/1是 */
+
+    /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;
 }
