@@ -1,11 +1,9 @@
 package com.envision.epc.module.uploadfile.application;
 
-import com.aspose.pdf.Document;
 import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.infrastructure.util.ApplicationContextUtils;
-import com.envision.epc.infrastructure.util.AsposeUtils;
 import com.envision.epc.infrastructure.util.MsgUtils;
 import com.envision.epc.module.event.ProjectDeleteEvent;
 import com.envision.epc.module.extract.application.validations.UploadFileValidation;
@@ -35,6 +33,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -47,9 +46,7 @@ import java.util.UUID;
 @EnableConfigurationProperties(UploadFileValidation.class)
 @RequiredArgsConstructor(onConstructor = @__(@Autowired))
 public class UploadFileCommandService {
-    public static final List<String> PDF_EXTENSIONS = List.of(".pdf");
-    public static final List<String> WORD_EXTENSIONS = List.of(".doc", ".docx");
-    public static final List<String> IMAGE_EXTENSIONS = List.of(".jpg", ".png", ".jpeg");
+    public static final List<String> EXCEL_EXTENSIONS = List.of(".xlsx");
     private final UploadFileAssembler uploadFileAssembler;
     private final BlobStorageRemote blobStorageRemote;
     private final UploadFileRepository uploadFileRepository;
@@ -67,15 +64,14 @@ public class UploadFileCommandService {
         if (StringUtils.isEmpty(filename) || !filename.contains(".")) {
             throw new BizException(ErrorCode.BAD_REQUEST, "文件名称为空");
         }
-        String extension = getFileExtension(filename).toLowerCase();
-        if (!PDF_EXTENSIONS.contains(extension) && !WORD_EXTENSIONS.contains(extension) && !IMAGE_EXTENSIONS.contains(extension)) {
+        String extension = getFileExtension(filename).toLowerCase(Locale.ROOT);
+        if (!EXCEL_EXTENSIONS.contains(extension)) {
             throw new BizException(ErrorCode.BAD_REQUEST, "文件格式错误");
         }
 
-        String pdfFilename = UUID.randomUUID().toString().replace("-", "") + ".pdf";
-        String path = "extract/" + pdfFilename;
+        String excelFilename = UUID.randomUUID().toString().replace("-", "") + ".xlsx";
+        String path = "extract/" + excelFilename;
         Path tempFilePath = Files.createTempFile("upload_", extension);
-        Path pdfTempPath = null;
 
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
@@ -90,29 +86,11 @@ public class UploadFileCommandService {
             }
             String hash = HexFormat.of().formatHex(md.digest());
 
-            if (WORD_EXTENSIONS.contains(extension)) {
-                pdfTempPath = Files.createTempFile("converted_", ".pdf");
-                AsposeUtils.wordToPdf(pdfTempPath.toString(), Files.newInputStream(tempFilePath));
-            } else if (IMAGE_EXTENSIONS.contains(extension)) {
-                pdfTempPath = Files.createTempFile("converted_", ".pdf");
-                AsposeUtils.imageToPdf(pdfTempPath.toString(), Files.newInputStream(tempFilePath));
-            } else {
-                pdfTempPath = tempFilePath;
-            }
-
-            int pages;
-            try (InputStream pdfStream = Files.newInputStream(pdfTempPath)) {
-                Document document = AsposeUtils.loadPDF(pdfStream);
-                log.info("Document hash: [{}] isLinearized: [{}]", hash, document.isLinearized());
-                pages = document.getPages().size();
-            }
-
-            if (pages > uploadFileValidation.getMaxPageCount()) {
-                throw new BizException(ErrorCode.BAD_REQUEST, MsgUtils.getMessage("file.max.page.error", uploadFileValidation.getMaxPageCount()));
-            }
+            int pages = 1;
+            log.info("Excel document hash: [{}]", hash);
 
             long size;
-            try (InputStream uploadStream = Files.newInputStream(pdfTempPath)) {
+            try (InputStream uploadStream = Files.newInputStream(tempFilePath)) {
                 size = uploadStream.available();
 
                 if (size > uploadFileValidation.getMaxSize() * 1024 * 1024) {
@@ -130,9 +108,6 @@ public class UploadFileCommandService {
             throw new BizException(ErrorCode.SYS_ERROR);
         } finally {
             Files.deleteIfExists(tempFilePath);
-            if (pdfTempPath != null) {
-                Files.deleteIfExists(pdfTempPath);
-            }
         }
     }
 

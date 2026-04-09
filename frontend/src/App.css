@@ -205,6 +205,24 @@ body {
   color: #8d97a8;
 }
 
+.upload-batch-bar {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid #dbe8ff;
+  border-radius: 10px;
+  background: #f8fbff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.upload-batch-label {
+  color: #1a2f58;
+  font-weight: 600;
+  min-width: 64px;
+}
+
 @media (max-width: 960px) {
   .config-shell {
     grid-template-columns: 1fr;
@@ -216,5 +234,9 @@ body {
 
   .brand-subtitle {
     display: none;
+  }
+
+  .upload-batch-bar {
+    align-items: stretch;
   }
 }

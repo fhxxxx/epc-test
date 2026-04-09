@@ -199,6 +199,8 @@ function FilePanel({ companyCode }) {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadSubmitting, setUploadSubmitting] = useState(false);
   const [uploadRows, setUploadRows] = useState([]);
+  const [batchCompanyCode, setBatchCompanyCode] = useState();
+  const [batchFileCategory, setBatchFileCategory] = useState();
   const [pullModalOpen, setPullModalOpen] = useState(false);
   const [pullSubmitting, setPullSubmitting] = useState(false);
   const [companyOptions, setCompanyOptions] = useState([]);
@@ -255,6 +257,8 @@ function FilePanel({ companyCode }) {
   const onOpenUploadModal = () => {
     setUploadModalOpen(true);
     setUploadRows([]);
+    setBatchCompanyCode(companyCode || undefined);
+    setBatchFileCategory(category);
     loadCompanyOptions();
   };
 
@@ -338,6 +342,22 @@ function FilePanel({ companyCode }) {
     }
   };
 
+  const applyBatchSettings = () => {
+    if (!uploadRows.length) {
+      message.warning("请先选择需要上传的文件");
+      return;
+    }
+    if (!batchCompanyCode && !batchFileCategory) {
+      message.warning("请先选择要批量应用的公司代码或类型");
+      return;
+    }
+    setUploadRows((prev) => prev.map((row) => ({
+      ...row,
+      ...(batchCompanyCode ? { companyCode: batchCompanyCode } : {}),
+      ...(batchFileCategory ? { fileCategory: batchFileCategory } : {})
+    })));
+  };
+
   const onOpenPullModal = () => {
     const [year, month] = yearMonth.split("-");
     const period = String(Number(month || "1")).padStart(2, "0");
@@ -364,7 +384,8 @@ function FilePanel({ companyCode }) {
       const fiscalYear = values.fiscalYear.year();
       const requestMonth = String(Math.min(endMonth, 12)).padStart(2, "0");
       const requestYearMonth = `${fiscalYear}-${requestMonth}`;
-      const makeFiscalPeriod = (monthValue) => `${fiscalYear}${String(monthValue).padStart(2, "0")}1`;
+      // 规则：四位年份 + 0 + 两位月份，例如 2025 + 0 + 02 = 2025002
+      const makeFiscalPeriod = (monthValue) => `${fiscalYear}0${String(monthValue).padStart(2, "0")}`;
       const { data } = await client.post("/tax-ledger/datalake/pull", {
         companyCodeList: values.companyCodes,
         yearMonth: requestYearMonth,
@@ -457,6 +478,34 @@ function FilePanel({ companyCode }) {
           <p className="ant-upload-text">点击或拖拽文件上传</p>
           <p className="ant-upload-hint">支持 .xlsx 格式文件</p>
         </Upload.Dragger>
+
+        <div className="upload-batch-bar">
+          <Text className="upload-batch-label">批量设置</Text>
+          <Select
+            value={batchCompanyCode}
+            showSearch
+            placeholder="请选择公司代码"
+            style={{ width: 280 }}
+            loading={companyLoading}
+            options={companyOptions}
+            filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+            onSearch={loadCompanyOptions}
+            onChange={setBatchCompanyCode}
+          />
+          <Select
+            value={batchFileCategory}
+            placeholder="请选择类型"
+            style={{ width: 240 }}
+            options={FILE_CATEGORIES}
+            onChange={setBatchFileCategory}
+          />
+          <Button
+            onClick={applyBatchSettings}
+            disabled={!uploadRows.length || (!batchCompanyCode && !batchFileCategory)}
+          >
+            批量应用
+          </Button>
+        </div>
 
         <Table
           style={{ marginTop: 16 }}
@@ -1076,10 +1125,10 @@ function ConfigPanel({ companyCode }) {
             </Button>
             <Popconfirm
               overlayClassName="pretty-popconfirm"
-              title={`确认删除该${activeMeta.label}？`}
+              title={activeMeta.key === "company-code" ? "删除公司将清理全部关联数据，是否继续？" : `确认删除该${activeMeta.label}？`}
               description={
                 activeMeta.key === "company-code"
-                  ? "删除后将同步清除该公司在文件记录、台账运行、配置覆盖与权限映射中的关联数据，且操作不可撤销；如需恢复，仅可重新新增公司并重新导入/授权。"
+                  ? "删除后将同步清除该公司关联的文件记录（含上传与数据湖文件）、台账运行与产物、配置覆盖项、权限授权数据。该操作不可撤销，如需恢复只能重新新增并重新导入。"
                   : "删除后将立即生效，如需恢复请重新新增。"
               }
               okText="确认删除"
@@ -1198,6 +1247,9 @@ function ConfigPanel({ companyCode }) {
               try {
                 setSubmitting(true);
                 const payload = editing ? { ...editing, ...values } : values;
+                if (editing && activeMeta.key === "company-code") {
+                  payload.companyCode = editing.companyCode;
+                }
                 await client.post(activeMeta.endpoint, payload);
                 message.success(editing ? "更新成功" : "新增成功");
                 setModalOpen(false);

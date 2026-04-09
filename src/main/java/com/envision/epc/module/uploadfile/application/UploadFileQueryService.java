@@ -79,7 +79,12 @@ public class UploadFileQueryService {
             response.setHeader("Access-Control-Allow-Headers", "*");
             response.setHeader("Access-Control-Expose-Headers", "Accept-Ranges, Content-Range, Content-Length");
             response.setHeader("Accept-Ranges", "bytes");
-            response.setContentType("application/pdf");
+            String filename = uploadFile.getName() == null ? "" : uploadFile.getName().toLowerCase();
+            if (filename.endsWith(".xlsx")) {
+                response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            } else {
+                response.setContentType("application/octet-stream");
+            }
             response.setHeader("Connection", "keep-alive");
             response.setHeader("Keep-Alive", "timeout=5");
             response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");

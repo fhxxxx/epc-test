@@ -1,7 +1,7 @@
 ﻿# EPC进项税报表系统 - 详细设计文档
 
-> 版本：v1.2  
-> 日期：2026-04-08  
+> 版本：v1.3  
+> 日期：2026-04-09  
 > 状态：评审中
 
 ---
@@ -46,11 +46,18 @@
 | 台账Sheet页 | 最多26个 |
 | 数据湖科目拆分 | 5类（收入/销项/进项/所得税/其他） |
 
-### 1.5 最近决策同步（2026-04-08）
+### 1.5 最近决策同步（2026-04-09）
 
-- 公司主数据统一：`company_code` 只以 `t_tax_company_code_config` 为唯一来源，`t_tax_company` 退出模型。
+- 公司主数据统一：`company_code` 只以 `t_company_code_config` 为唯一来源，`t_tax_company` 退出模型。
 - 数据库迁移：新增迁移脚本删除 `t_tax_company`（`DROP TABLE IF EXISTS t_tax_company`）。
-- 前端交互约束：除“公司代码配置”页外，所有弹窗中的“公司代码”字段均改为下拉选择，数据实时查询 `t_tax_company_code_config`，禁止手工输入。
+- 前端交互约束：除“公司代码配置”页外，所有弹窗中的“公司代码”字段均改为下拉选择，数据实时查询 `t_company_code_config`，禁止手工输入。
+- 权限弹窗员工检索触发时机：点击“添加权限”按钮后再触发首轮员工查询（`/user/list`），避免页面初始无效请求。
+- 权限弹窗员工下拉分页：默认加载20条，滚动到底部继续分页查询；无更多数据时底部显示“没有更多数据了”。
+- 数据湖拉取弹窗字段调整：统一文案为“会计期间”，开始/结束下拉固定取值 `01~16`。
+- 权限判定收敛：仅保留“超级管理员 + 用户-公司授权”两级，不再引入 `division` 白名单与项目级授权维度。
+- 权限接口收敛：权限新增/批量新增/删除接口不再接收 `permissionLevel`，后端移除对应参数校验逻辑。
+- 数据湖拉取改为批量接口：入参为 `companyCodeList`，单次请求支持多公司并发拉取并汇总结果。
+- 前端统一错误提示：后端返回 `{code!=0,msg}` 时，必须弹出 `msg`，禁止“失败场景仍提示成功”。
 
 ---
 
@@ -150,7 +157,7 @@ src/main/java/com/xxx/taxledger/
 │   ├── VatSpecialItemConfig.java
 │   └── UserPermission.java
 ├── dto/
-│   ├── AccountingDocumentDTO.java     # 数据湖API返回对象
+│   ├── DatalakeDTO.java               # 数据湖API返回对象（字段与fields=保持一致）
 │   ├── DataLakeQueryDTO.java          # 数据湖查询参数
 │   ├── LedgerGenerateDTO.java         # 台账生成请求
 │   ├── FileUploadDTO.java             # 文件上传请求
@@ -185,7 +192,7 @@ src/main/java/com/xxx/taxledger/
 CompanyCodeConfig (1) ──< FileRecord (N)
 CompanyCodeConfig (1) ──< LedgerRecord (N)
 CompanyCodeConfig (1) ──< UserPermission (N)
-SysUser (1) ──< UserPermission (N)   # employee_id -> user_code
+SysUser (1) ──< UserPermission (N)   # user_id -> user_code
 
 TaxCategoryConfig (N)
 ProjectConfig (N)
@@ -296,7 +303,7 @@ VatSpecialItemConfig (N)
 #### 3.2.4 公司主数据来源约束（实现补充）
 
 - 历史 `t_tax_company` 已退役，主数据不再双轨维护。
-- 所有 `company_code` 相关查询、校验、下拉选项均以 `t_tax_company_code_config` 为唯一来源。
+- 所有 `company_code` 相关查询、校验、下拉选项均以 `t_company_code_config` 为唯一来源。
 - 删除公司代码配置时采用软删，避免对历史文件、台账、权限记录产生物理级联影响。
 
 #### 3.2.5 税目配置表 `t_tax_category_config`
@@ -559,50 +566,71 @@ VatSpecialItemConfig (N)
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| POST | `/companies/{companyCode}/months/{yearMonth}/files/upload` | 上传文件到指定公司月份 | 该公司权限用户 |
-| GET | `/companies/{companyCode}/months/{yearMonth}/files` | 查询指定公司月份的文件列表 | 该公司权限用户 |
-| DELETE | `/companies/{companyCode}/months/{yearMonth}/files/{fileId}` | 删除文件记录 | 已具备该公司权限用户或SUPER_ADMIN |
-| GET | `/files/{fileId}/download` | 下载文件 | 该公司权限用户 |
+| POST | `/tax-ledger/files/upload` | 上传文件到指定公司月份 | 该公司权限用户 |
+| GET | `/tax-ledger/files` | 查询指定公司月份的文件列表（参数：`companyCode`,`yearMonth`） | 该公司权限用户 |
+| DELETE | `/tax-ledger/files/{id}` | 单条删除文件记录 | 已具备该公司权限用户或SUPER_ADMIN |
+| DELETE | `/tax-ledger/files?ids=1,2,3` | 批量删除文件记录 | 已具备该公司权限用户或SUPER_ADMIN |
+| GET | `/tax-ledger/files/{id}/download` | 下载文件 | 该公司权限用户 |
 
 **上传接口详细设计**：
 
 ```
-POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/files/upload
+POST /tax-ledger/files/upload
 Content-Type: multipart/form-data
 
 参数：
 - file: MultipartFile（必填）
+- companyCode: String（必填）
+- yearMonth: String（必填，格式 `yyyy-MM`）
 - fileCategory: String（必填，枚举值见file_category）
-- fileSource: String（必填，UPLOAD）
+
+校验规则：
+- 文件类型仅允许 `.xlsx`（前后端均校验，禁止 `.xls/.pdf/.doc/.docx`）。
+- `companyCode` 必须存在于 `t_company_code_config` 且用户对该公司有权限。
 ```
 
 #### 4.2.4 数据湖模块
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| POST | `/companies/{companyCode}/months/{yearMonth}/datalake/pull` | 拉取数据湖数据并生成文件 | 该公司权限用户 |
+| POST | `/tax-ledger/datalake/pull` | 批量拉取数据湖并按公司生成文件 | 具备对应公司权限用户 |
 
 **拉取接口详细设计**：
 
 ```
-POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/datalake/pull
+POST /api/v1/tax-ledger/datalake/pull
 Content-Type: application/json
 
 请求体：
 {
-  "fiscalYearPeriod": "2026-01",  // 会计期间
-  "postingDateStart": "2026-01-01",  // 可选：凭证日期起始
-  "postingDateEnd": "2026-01-31"     // 可选：凭证日期结束
+  "companyCodeList": ["2320", "2355"],
+  "yearMonth": "2026-01",
+  "fiscalYearPeriodStart": "2025002",
+  "fiscalYearPeriodEnd": "2025002"
 }
 
+期间字段规则：
+- `fiscalYearPeriodStart/fiscalYearPeriodEnd` 采用 `YYYY0MM`（四位年份 + 0 + 两位月份）
+- 示例：会计年度 `2025`、会计期间 `02` => `2025002`
+
 处理流程：
-1. 调用数据湖API获取全量数据
-2. 按account字段拆分为5类明细
-3. 生成5个Excel文件
-4. 上传到Azure Blob
-5. 在t_file_record中创建5条记录
-6. 返回拉取结果摘要
+1. 按 `companyCodeList` 并发调用数据湖API
+2. 每个公司按account字段拆分为5类明细
+3. 每个公司生成5个Excel文件并上传到Azure Blob
+4. 在 `t_file_record` 中按唯一键覆盖写入
+5. 汇总返回 `successCount/failCount/errors`
+
+响应体示例：
+{
+  "successCount": 2,
+  "failCount": 1,
+  "errors": ["公司代码 3019 查询异常: xxx"]
+}
 ```
+
+**前端交互约束**：
+- 弹窗字段统一为“会计期间”。
+- 会计期间开始/结束下拉值固定为 `01~16`，仅允许选择，不允许手输。
 
 #### 4.2.5 台账生成模块
 
@@ -665,8 +693,17 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
 | GET | `/tax-ledger/permissions` | 获取权限列表（可按公司筛选） | SUPER_ADMIN/已具备该公司权限用户 |
 | POST | `/tax-ledger/permissions` | 单条授权 | SUPER_ADMIN/已具备该公司权限用户 |
 | POST | `/tax-ledger/permissions/batch` | 批量授权（一次提交多员工） | SUPER_ADMIN/已具备该公司权限用户 |
-| DELETE | `/tax-ledger/permissions` | 撤销授权（按 employeeId + companyCode） | SUPER_ADMIN/已具备该公司权限用户 |
+| DELETE | `/tax-ledger/permissions` | 撤销授权（按 userId + companyCode） | SUPER_ADMIN/已具备该公司权限用户 |
 | GET | `/user/list` | 员工检索（姓名/工号/域账号） | 已认证用户 |
+
+**员工检索交互约束**：
+- 触发时机：点击“添加权限”打开弹窗后再发起首轮查询。
+- 分页策略：默认 `pageSize=20`，下拉滚动到底部后继续按页加载。
+- 无数据提示：当后续分页为空时，弹窗底部显示“没有更多数据了”。
+
+**权限模型约束（入参与校验）**：
+- `permission_level` 已废弃，`/tax-ledger/permissions` 与 `/tax-ledger/permissions/batch` 请求体仅保留 `userId`、`userName`、`companyCode`。
+- 删除接口 `/tax-ledger/permissions` 仅按 `userId + companyCode` 定位授权记录，不再存在 `permissionLevel` 相关参数与校验。
 
 **批量授权请求示例**：
 ```json
@@ -674,13 +711,11 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
   {
     "userId": "zhangsan",
     "userName": "张三",
-    "employeeId": "59930",
     "companyCode": "2320"
   },
   {
     "userId": "lisi",
     "userName": "李四",
-    "employeeId": "60218",
     "companyCode": "2320"
   }
 ]
@@ -720,21 +755,25 @@ POST /api/v1/tax-ledger/companies/{companyCode}/months/{yearMonth}/ledger/genera
 #### 5.1.1 数据湖API调用
 
 ```java
-// API路径模板（不含account过滤）
+// 批量入参（前端提交）
+// {
+//   "companyCodeList": ["2320", "2355"],
+//   "yearMonth": "2026-01",
+//   "fiscalYearPeriodStart": "2025002",
+//   "fiscalYearPeriodEnd": "2025002"
+// }
+
+// 对 companyCodeList 并发调用数据湖，汇总 successCount/failCount/errors
+// 注意：postingDateInTheDocumentStart/End 已从V1移除，不再作为查询条件
+
 String url = "{platformDomain}/apis/finance/electronicarchives/datalakeit_chatenv/"
     + "finance_electronicarchives_accounting_document_print"
     + "?filter[company_code][EQ]={companyCode}"
     + "&filter[fiscal_year_period][GE]={periodStart}"
     + "&filter[fiscal_year_period][LE]={periodEnd}"
-    + "&page[offset]={offset}&page[limit]={limit}"
-    + "&fields={fields}";
-
-// 查询时不加account过滤，拉取全量数据后按account拆分
-// fields: company_code, fiscal_year_period, posting_date_in_the_document,
-//         account, item_text, reference,
-//         debit_amount_in_local_currency, credit_amount_in_local_currency,
-//         accounting_document_number, company_id_of_trading_partner,
-//         debit_credit_indicator
+    + "&filter[account][LIKE]=2221010100&filter[account][LIKE]=2221010400"
+    + "&page[offset]=0&page[limit]=5000"
+    + "&fields={按《数据获取-数据集字段》维护的逗号分隔字段清单}";
 ```
 
 #### 5.1.2 科目拆分逻辑
@@ -749,14 +788,13 @@ public enum AccountTypeEnum {
 }
 ```
 
-#### 5.1.3 数据湖DTO字段映射
+#### 5.1.3 数据湖DTO字段映射（`DatalakeDTO`）
 
 | 中文字段 | API字段 | 取值逻辑 |
 |---------|---------|---------|
 | 公司代码 | company_code | 直接取值 |
 | 财政年/阶段 | fiscal_year_period | 直接取值 |
 | 凭证日期 | document_date | 直接取值 |
-| 过账日期 | posting_date_in_the_document | 直接取值 |
 | 凭证类型 | document_type | 直接取值 |
 | 凭证编号 | document_print_number | 直接取值 |
 | 抬头文本 | document_header_text | 直接取值 |
@@ -779,6 +817,10 @@ public enum AccountTypeEnum {
 | 参考代码1 | reference_key_1_for_line_item | 直接取值 |
 | 分配 | assignment | 直接取值 |
 | 用户名 | user_name | 直接取值 |
+
+**实现补充**：
+- 代码中不再使用旧 `AccountingDocumentDTO`，统一切换为 `DatalakeDTO`。
+- `fields=` 输出字段必须与需求文档《数据获取》-《数据集字段》一致，新增字段需同步更新DTO与常量模板。
 
 ### 5.2 台账生成主流程
 
@@ -1176,32 +1218,29 @@ public enum AccountTypeEnum {
 ### 6.4 上传文件弹窗
 
 ```
-┌──────────────────────────────┐
-│  上传文件                      │
-│                              │
-│  公司：上海睿景(2320) [只读]    │
-│  月份：2026-03      [只读]     │
-│                              │
-│  文件类别：[请选择 ▼]          │
-│  ├ BS 资产负债表               │
-│  ├ PL 利润表                   │
-│  ├ BS附表-应交税费             │
-│  ├ PL附表                     │
-│  ├ 印花税明细                  │
-│  ├ 增值税销项                  │
-│  ├ 增值税进项认证清单           │
-│  └ 累计项目税收明细表           │
-│                              │
-│  [拖拽或点击上传文件]           │
-│  ┌──────────────────────────┐│
-│  │   选择文件或拖拽到此处     ││
-│  └──────────────────────────┘│
-│                              │
-│  支持.xlsx/.xls格式           │
-│                              │
-│        [取消]    [确认上传]    │
-└──────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  上传结果excel                                                │
+│                                                              │
+│  [拖拽上传区]                                                  │
+│   点击或拖拽文件上传（仅支持.xlsx）                           │
+│                                                              │
+│  待上传文件列表                                                │
+│  ┌──────────────┬──────────────────────┬─────────────┬──────┐│
+│  │ 文件名         │ 公司代码（下拉）       │ 类型（文件类别） │ 进度 ││
+│  ├──────────────┼──────────────────────┼─────────────┼──────┤│
+│  │ A.xlsx       │ [2320-上海睿景 ▼]     │ [BS ▼]      │ 待上传 ││
+│  │ B.xlsx       │ [2355-上海景程 ▼]     │ [PL ▼]      │ 待上传 ││
+│  └──────────────┴──────────────────────┴─────────────┴──────┘│
+│                                                              │
+│                             [取消]     [确定]                │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+交互约束：
+- 点击主页面“上传文件”按钮后，必须弹出独立上传弹窗，不直接上传。
+- 公司代码字段使用下拉选择，实时查询 `/tax-ledger/config/company-code`，不允许手输。
+- 类型字段取值为文件类别枚举（`file_category`）。
+- 仅允许 `.xlsx` 文件（前端选择阶段和后端接口阶段双重校验）。
 
 ### 6.5 拉取数据湖弹窗
 
@@ -1209,13 +1248,11 @@ public enum AccountTypeEnum {
 ┌──────────────────────────────┐
 │  拉取数据湖数据                │
 │                              │
-│  公司：上海睿景(2320) [只读]    │
-│  月份：2026-03      [只读]     │
+│  公司代码：[多选下拉]            │
+│  会计年度：[2026 ▼]             │
 │                              │
-│  会计期间：2026-03            │
-│  凭证日期范围（选填）：         │
-│  起始：[2026-03-01]           │
-│  结束：[2026-03-31]           │
+│  会计期间开始：[01~16 ▼]       │
+│  会计期间结束：[01~16 ▼]       │
 │                              │
 │  将自动拉取并生成以下文件：      │
 │  □ 收入明细                    │
@@ -1273,11 +1310,11 @@ public enum AccountTypeEnum {
 - 分页：展示总条数与页码，分页文案中文化（示例：`共X条`、`10/页`）。
 - 字段约束：仅“公司代码配置”页允许手工输入公司代码；其余配置页中的 `companyCode` 字段必须使用下拉选择。
 - 下拉数据源：实时查询 `/tax-ledger/config/company-code`，禁止自由输入，确保公司代码只来自主数据表。
+- 编辑约束：在“公司代码配置”页，编辑态禁止修改 `companyCode`（仅允许修改公司名称/BP信息），提交时后端按原 `companyCode` 落库。
 - 公司代码配置页删除告警弹窗建议文案：
-  - 标题：`确认删除该公司代码？`
-  - 正文：`删除后将一并删除该公司关联的文件记录、数据湖拉取结果、台账记录/运行记录/运行产物、权限映射及配置关联数据，此操作不可恢复。`
-  - 二次确认：`请输入公司代码 {{companyCode}} 以确认删除`
-  - 按钮：`取消` / `确认删除（不可恢复）`
+  - 标题：`删除公司将清理全部关联数据，是否继续？`
+  - 正文：`删除后将同步清除该公司关联的文件记录（含上传与数据湖文件）、台账运行与产物、配置覆盖项、权限授权数据。该操作不可撤销，如需恢复只能重新新增并重新导入。`
+  - 按钮：`取消` / `确认删除`
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -1306,6 +1343,8 @@ public enum AccountTypeEnum {
 **交互补充规范（已落地）**：
 - 主页面仅保留“添加权限”按钮，点击后弹出独立授权弹窗。
 - 员工选择使用可搜索下拉（调用 `/user/list`），支持多选员工。
+- 员工查询触发时机为“打开添加权限弹窗后”，不在页面初始加载时预查。
+- 员工下拉默认加载20条，滚动到底触发下一页加载；若无更多数据，在下拉底部显示“没有更多数据了”。
 - 批量提交时调用 `/tax-ledger/permissions/batch`，一次完成同公司代码的多员工授权。
 - 取消 `permission_level` 字段，权限页仅维护“用户-公司”映射关系。
 - 权限列表右下角分页，展示总条数与每页条数中文文案。
@@ -1944,7 +1983,7 @@ options.setPrefix(prefix);
 blobContainerClient.listBlobs(options, Duration.ofSeconds(60));
 ```
 
-### B.4 数据湖API调用示例（参考InvoiceCommandService）
+### B.4 数据湖API调用示例（批量拉取）
 
 ```java
 @Service
@@ -1955,67 +1994,31 @@ public class DataLakeQueryService {
     @Value("${custom.platform.token.domain}")
     private String platformDomain;
 
-    /**
-     * 查询数据湖会计凭证数据
-     */
-    public List<AccountingDocumentDTO> queryAccountingDocuments(
-            String companyCode,
-            String fiscalYearPeriodStart,
-            String fiscalYearPeriodEnd
-    ) {
-        int offset = 0;
-        int limit = 5000;
-
-        String reqUrl = platformDomain + String.format(
-                "/api/finance/electronicArchives/%s/%s/%s/%d/%d",
-                companyCode, fiscalYearPeriodStart, fiscalYearPeriodEnd, offset, limit
-        );
-
-        return platformRemote.fetchFromDataLake(
-                "FINANCE_ELECTRONICARCHIVES_SVC",
-                reqUrl,
-                AccountingDocumentDTO::fromPltData
-        );
+    public List<String> queryFromDataLakeBatch(InvoiceQuery query) {
+        List<CompletableFuture<String>> futures = new ArrayList<>();
+        for (String companyCode : query.getCompanyCodeList()) {
+            futures.add(CompletableFuture.supplyAsync(() -> {
+                try {
+                    List<DatalakeDTO> rows = queryFromDataLake(
+                            companyCode, query.getFiscalYearPeriodStart(), query.getFiscalYearPeriodEnd());
+                    if (CollectionUtils.isEmpty(rows)) {
+                        return "公司代码：" + companyCode + " 查无数据";
+                    }
+                    saveDataToExcel(companyCode, query.getProjectId(), rows);
+                    return "";
+                } catch (Exception e) {
+                    return "公司代码 " + companyCode + " 查询异常: " + e.getMessage();
+                }
+            }, taskExecutor));
+        }
+        return futures.stream().map(CompletableFuture::join).filter(StrUtil::isNotBlank).toList();
     }
 
-    /**
-     * 分页查询大数据量
-     */
-    public List<AccountingDocumentDTO> queryWithPagination(
-            String companyCode,
-            String fiscalYearPeriodStart,
-            String fiscalYearPeriodEnd
-    ) {
-        List<AccountingDocumentDTO> allResults = new ArrayList<>();
-        int offset = 0;
-        int limit = 5000;
-
-        while (true) {
-            String reqUrl = platformDomain + String.format(
-                    "/api/finance/electronicArchives/%s/%s/%s/%d/%d",
-                    companyCode, fiscalYearPeriodStart, fiscalYearPeriodEnd, offset, limit
-            );
-
-            List<AccountingDocumentDTO> pageResults = platformRemote.fetchFromDataLake(
-                    "FINANCE_ELECTRONICARCHIVES_SVC",
-                    reqUrl,
-                    AccountingDocumentDTO::fromPltData
-            );
-
-            if (CollectionUtils.isEmpty(pageResults)) {
-                break;
-            }
-
-            allResults.addAll(pageResults);
-
-            if (pageResults.size() < limit) {
-                break;  // 最后一页
-            }
-
-            offset += limit;
-        }
-
-        return allResults;
+    public List<DatalakeDTO> queryFromDataLake(String companyCode, String periodStart, String periodEnd) {
+        String reqUrl = platformDomain + StrUtil.format(
+                Constant.FINANCE_ELECTRONICARCHIVES_REQ_PATH_PATTERN, companyCode, periodStart, periodEnd, 0, 5000);
+        return platformRemote.fetchFromDataLake(
+                Constant.FINANCE_ELECTRONICARCHIVES_SVC, reqUrl, DatalakeDTO::fromPltData);
     }
 }
 ```
@@ -2029,19 +2032,19 @@ public class PermissionInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
                              Object handler) throws Exception {
-        // 获取当前用户工号（从Okta JWT中提取）
-        String employeeId = SecurityContextHolder.getCurrentEmployeeId();
+        // 获取当前用户编码（从Okta/JWT中提取）
+        String userCode = SecurityContextHolder.getCurrentUserCode();
 
         // 判断是否是超级管理员
-        if (isSuperAdmin(employeeId)) {
+        if (isSuperAdmin(userCode)) {
             return true;  // 超级管理员放行
         }
 
         // 获取请求的公司代码
         String companyCode = request.getParameter("companyCode");
 
-        // 校验用户是否有该公司权限
-        if (!hasCompanyPermission(employeeId, companyCode)) {
+        // 校验用户是否有该公司权限（仅公司维度）
+        if (!hasCompanyPermission(userCode, companyCode)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("无权限访问该公司数据");
             return false;

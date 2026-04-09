@@ -1,14 +1,13 @@
 package com.envision.epc.module.font;
 
-import com.aspose.words.FontSettings;
 import com.envision.epc.facade.azure.BlobStorageRemote;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -16,8 +15,8 @@ import java.io.OutputStream;
 import java.util.List;
 
 /**
- * @author chaoyue.zhao1
- * @since 2025/09/18-15:47
+ * Sync fonts from blob storage to local path.
+ * Aspose Words/PDF is removed; this loader only keeps the file sync capability.
  */
 @Slf4j
 @Component
@@ -27,6 +26,7 @@ public class FontLoader {
 
     @Value("${custom.font.efs-font}")
     private String localFontPath;
+
     @Value("${custom.font.blob-font}")
     private String blobFontPath;
 
@@ -37,25 +37,24 @@ public class FontLoader {
             for (String blobPath : blobFiles) {
                 String fileName = blobPath.substring(blobFontPath.length());
                 File localFile = new File(localFontPath + fileName);
-
                 if (localFile.exists()) {
                     continue;
                 }
                 File parentDir = localFile.getParentFile();
-                if (!parentDir.exists()) {
+                if (parentDir != null && !parentDir.exists()) {
                     parentDir.mkdirs();
                 }
                 try (OutputStream os = new FileOutputStream(localFile)) {
                     blobService.loadStream(blobPath, os);
-                    log.info("下载完成:[{}]", fileName);
+                    log.info("Font downloaded: {}", fileName);
                 } catch (IOException e) {
-                    log.error("下载失败:[{}]", fileName, e);
+                    log.error("Font download failed: {}", fileName, e);
                 }
             }
-            FontSettings.getDefaultInstance().setFontsFolder(localFontPath, false);
-            log.info("Aspose 字体加载成功！");
+            log.info("Font files synced to local path: {}", localFontPath);
         } catch (Exception e) {
-            log.error("初始化字体加载失败",e);
+            log.error("Font initialization failed", e);
         }
     }
 }
+
