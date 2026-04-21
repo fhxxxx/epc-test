@@ -6,6 +6,8 @@ import com.envision.epc.infrastructure.mybatis.AuditingEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
  * 税务文件记录
  */
@@ -31,6 +33,18 @@ public class FileRecord extends AuditingEntity {
 
     /** 文件大小（字节） */
     private Long fileSize;
+
+    /** 解析状态 */
+    private FileParseStatusEnum parseStatus;
+
+    /** 解析结果Blob路径 */
+    private String parseResultBlobPath;
+
+    /** 解析失败原因 */
+    private String parseErrorMsg;
+
+    /** 解析完成时间 */
+    private LocalDateTime parsedAt;
 
     /** 逻辑删除标记：0-否，1-是 */
     private Integer isDeleted;

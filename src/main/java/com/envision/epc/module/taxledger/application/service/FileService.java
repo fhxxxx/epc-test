@@ -6,6 +6,7 @@ import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.domain.CompanyCodeConfig;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
+import com.envision.epc.module.taxledger.domain.FileParseStatusEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
 import com.envision.epc.module.taxledger.infrastructure.CompanyCodeConfigMapper;
 import com.envision.epc.module.taxledger.infrastructure.FileRecordMapper;
@@ -38,6 +39,7 @@ public class FileService {
     private final FileRecordMapper fileRecordMapper;
     private final CompanyCodeConfigMapper companyCodeConfigMapper;
     private final PermissionService permissionService;
+    private final FileParseOrchestratorService fileParseOrchestratorService;
 
     /**
      * 上传文件
@@ -65,7 +67,11 @@ public class FileService {
             blobStorageRemote.upload(blobPath, inputStream);
         }
 
-        return saveOrReplace(companyCode, yearMonth, filename, category, blobPath, file.getSize());
+        FileRecord record = saveOrReplace(companyCode, yearMonth, filename, category, blobPath, file.getSize());
+        if (category.isManualUpload()) {
+            fileParseOrchestratorService.parseAsync(record.getId(), permissionService.currentUserCode());
+        }
+        return record;
     }
 
     /**
@@ -95,6 +101,10 @@ public class FileService {
         record.setFileCategory(category);
         record.setBlobPath(blobPath);
         record.setFileSize(fileSize);
+        record.setParseStatus(FileParseStatusEnum.PENDING);
+        record.setParseResultBlobPath(null);
+        record.setParseErrorMsg(null);
+        record.setParsedAt(null);
         record.setIsDeleted(0);
         fileRecordMapper.insert(record);
         return record;
@@ -174,6 +184,7 @@ public class FileService {
         } catch (Exception ignore) {
             // 主流程以逻辑删除成功为准
         }
+        fileParseOrchestratorService.deleteParseResultIfExists(record);
     }
 
     /**
@@ -191,5 +202,14 @@ public class FileService {
         String fileName = URLEncoder.encode(record.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
         blobStorageRemote.loadStream(record.getBlobPath(), response.getOutputStream());
+    }
+
+    public String loadParsedResultOrParse(Long id) {
+        FileRecord record = fileRecordMapper.selectById(id);
+        if (record == null || record.getIsDeleted() == 1) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "File not found");
+        }
+        permissionService.checkCompanyAccess(record.getCompanyCode());
+        return fileParseOrchestratorService.loadParsedResultOrParse(record, permissionService.currentUserCode());
     }
 }
