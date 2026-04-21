@@ -52,14 +52,7 @@ public class SheetParserRegistry {
         @Override
         public ParseResult<Object> parse(java.io.InputStream inputStream, ParseContext context) {
             ParseResult<Object> result = ParseResult.<Object>builder().build();
-            result.addIssue(ParseSeverity.ERROR, "PARSER_NOT_IMPLEMENTED",
-                    "parser not implemented for category: " + category.name());
-            result.setMeta(ParseMeta.builder()
-                    .engineType(category.getPreferredEngine())
-                    .sheetName(category.getTargetSheetName())
-                    .templateVersion("v1")
-                    .elapsedMs(0L)
-                    .build());
+            result.addIssue("parser not implemented for category: " + category.name());
             return result;
         }
     }

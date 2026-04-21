@@ -11,14 +11,13 @@ import java.util.List;
 public class ParseResult<T> {
     private T data;
     @Builder.Default
-    private List<ParseIssue> issues = new ArrayList<>();
-    private ParseMeta meta;
+    private List<String> issues = new ArrayList<>();
 
-    public void addIssue(ParseSeverity severity, String code, String message) {
-        issues.add(ParseIssue.builder().severity(severity).code(code).message(message).build());
+    public void addIssue(String message) {
+        issues.add(message);
     }
 
     public boolean hasError() {
-        return issues.stream().anyMatch(it -> it.getSeverity() == ParseSeverity.ERROR);
+        return !issues.isEmpty();
     }
 }
