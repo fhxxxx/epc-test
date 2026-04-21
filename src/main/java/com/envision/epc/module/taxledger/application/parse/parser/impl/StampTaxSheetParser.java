@@ -1,7 +1,7 @@
 package com.envision.epc.module.taxledger.application.parse.parser.impl;
 
 import com.alibaba.excel.EasyExcelFactory;
-import com.envision.epc.module.taxledger.application.dto.PlAppendixProjectCompanyUploadDTO;
+import com.envision.epc.module.taxledger.application.dto.StampDutySummaryRowDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
@@ -12,35 +12,35 @@ import java.io.InputStream;
 import java.util.List;
 
 /**
- * PL附表-项目公司解析器。
- * 对应sheet页：PL附表-项目公司
- * 对应类别：FileCategoryEnum.PL_APPENDIX_PROJECT
+ * 印花税明细解析器。
+ * 对应sheet页：印花税明细-2320、2355
+ * 对应类别：FileCategoryEnum.STAMP_TAX
  */
 @Component
-public class PlAppendixProjectCompanySheetParser implements SheetParser<List<PlAppendixProjectCompanyUploadDTO>> {
+public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRowDTO>> {
     @Override
     public FileCategoryEnum category() {
-        return FileCategoryEnum.PL_APPENDIX_PROJECT;
+        return FileCategoryEnum.STAMP_TAX;
     }
 
     @Override
-    public Class<List<PlAppendixProjectCompanyUploadDTO>> resultType() {
+    public Class<List<StampDutySummaryRowDTO>> resultType() {
         @SuppressWarnings("unchecked")
-        Class<List<PlAppendixProjectCompanyUploadDTO>> cls = (Class<List<PlAppendixProjectCompanyUploadDTO>>) (Class<?>) List.class;
+        Class<List<StampDutySummaryRowDTO>> cls = (Class<List<StampDutySummaryRowDTO>>) (Class<?>) List.class;
         return cls;
     }
 
     @Override
-    public ParseResult<List<PlAppendixProjectCompanyUploadDTO>> parse(InputStream inputStream, ParseContext context) {
-        ParseResult<List<PlAppendixProjectCompanyUploadDTO>> result = ParseResult.<List<PlAppendixProjectCompanyUploadDTO>>builder()
+    public ParseResult<List<StampDutySummaryRowDTO>> parse(InputStream inputStream, ParseContext context) {
+        ParseResult<List<StampDutySummaryRowDTO>> result = ParseResult.<List<StampDutySummaryRowDTO>>builder()
                 .data(List.of())
                 .build();
         try {
-            List<PlAppendixProjectCompanyUploadDTO> rows = EasyExcelFactory.read(inputStream)
-                    .head(PlAppendixProjectCompanyUploadDTO.class)
+            List<StampDutySummaryRowDTO> rows = EasyExcelFactory.read(inputStream)
+                    .head(StampDutySummaryRowDTO.class)
                     .sheet()
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getSplitBasis()));
+            rows.removeIf(row -> isBlank(row.getContractCategory()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
@@ -53,3 +53,4 @@ public class PlAppendixProjectCompanySheetParser implements SheetParser<List<PlA
         return value == null || value.isBlank();
     }
 }
+

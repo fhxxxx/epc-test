@@ -6,7 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 @Data
-public class PlStatementRowDTO {
+public class BsStatementRowDTO {
 
     /** 项目 */
     @ExcelProperty("项目")
@@ -16,11 +16,12 @@ public class PlStatementRowDTO {
     @ExcelProperty("行")
     private String lineNo;
 
-    /** 本期发生额 */
-    @ExcelProperty("本期发生额")
-    private BigDecimal currentPeriodAmount;
+    /** 期末余额 */
+    @ExcelProperty("期末余额")
+    private BigDecimal endingBalance;
 
-    /** 累计发生额 */
-    @ExcelProperty("累计发生额")
-    private BigDecimal accumulatedAmount;
+    /** 年初余额 */
+    @ExcelProperty("年初余额")
+    private BigDecimal beginningBalance;
 }
+

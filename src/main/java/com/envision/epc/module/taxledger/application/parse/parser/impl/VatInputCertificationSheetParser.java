@@ -1,5 +1,6 @@
 package com.envision.epc.module.taxledger.application.parse.parser.impl;
 
+import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.VatInputCertificationItemDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
@@ -34,7 +35,22 @@ public class VatInputCertificationSheetParser implements SheetParser<List<VatInp
         ParseResult<List<VatInputCertificationItemDTO>> result = ParseResult.<List<VatInputCertificationItemDTO>>builder()
                 .data(List.of())
                 .build();
-        result.addIssue("增值税进项认证清单 parser is initialized only");
-        return result;
+        try {
+            List<VatInputCertificationItemDTO> rows = EasyExcelFactory.read(inputStream)
+                    .head(VatInputCertificationItemDTO.class)
+                    .sheet()
+                    .headRowNumber(3)
+                    .doReadSync();
+            rows.removeIf(row -> isBlank(row.getSerialNo()) && isBlank(row.getInvoiceNo()));
+            result.setData(rows);
+            return result;
+        } catch (Exception e) {
+            result.addIssue("INVALID_WORKBOOK: " + e.getMessage());
+            return result;
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

@@ -1,5 +1,6 @@
 package com.envision.epc.module.taxledger.application.parse.parser.impl;
 
+import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
@@ -34,7 +35,21 @@ public class ContractStampDutyLedgerSheetParser implements SheetParser<List<Cont
         ParseResult<List<ContractStampDutyLedgerItemDTO>> result = ParseResult.<List<ContractStampDutyLedgerItemDTO>>builder()
                 .data(List.of())
                 .build();
-        result.addIssue("合同印花税明细台账 parser is initialized only");
-        return result;
+        try {
+            List<ContractStampDutyLedgerItemDTO> rows = EasyExcelFactory.read(inputStream)
+                    .head(ContractStampDutyLedgerItemDTO.class)
+                    .sheet()
+                    .doReadSync();
+            rows.removeIf(row -> isBlank(row.getSerialNo()) && isBlank(row.getContractNoOrCode()));
+            result.setData(rows);
+            return result;
+        } catch (Exception e) {
+            result.addIssue("INVALID_WORKBOOK: " + e.getMessage());
+            return result;
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
