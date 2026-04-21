@@ -12,6 +12,7 @@ import com.envision.epc.module.taxledger.infrastructure.FileRecordMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -126,12 +127,26 @@ public class FileService {
      * 列表查询
      */
     public List<FileRecord> list(String companyCode, String yearMonth) {
-        permissionService.checkCompanyAccess(companyCode);
-        return fileRecordMapper.selectList(new LambdaQueryWrapper<FileRecord>()
+        LambdaQueryWrapper<FileRecord> queryWrapper = new LambdaQueryWrapper<FileRecord>()
                 .eq(FileRecord::getIsDeleted, 0)
-                .eq(FileRecord::getCompanyCode, companyCode)
                 .eq(FileRecord::getYearMonth, yearMonth)
-                .orderByDesc(FileRecord::getCreateTime));
+                .orderByDesc(FileRecord::getCreateTime);
+
+        if (StringUtils.hasText(companyCode)) {
+            permissionService.checkCompanyAccess(companyCode);
+            queryWrapper.eq(FileRecord::getCompanyCode, companyCode);
+            return fileRecordMapper.selectList(queryWrapper);
+        }
+
+        if (!permissionService.canAccessAllCompanies()) {
+            List<String> grantedCompanyCodes = permissionService.listGrantedCompanyCodes();
+            if (grantedCompanyCodes.isEmpty()) {
+                return List.of();
+            }
+            queryWrapper.in(FileRecord::getCompanyCode, grantedCompanyCodes);
+        }
+
+        return fileRecordMapper.selectList(queryWrapper);
     }
 
     public void deleteFiles(List<Long> ids) {

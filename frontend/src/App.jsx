@@ -237,16 +237,13 @@ function FilePanel({ companyCode }) {
     []
   );
 
-  const load = async ({ silentNoCompany = true } = {}) => {
-    if (!companyCode) {
-      setRows([]);
-      if (!silentNoCompany) {
-        message.warning("请先在公司页选择目标公司");
-      }
-      return;
-    }
+  const load = async () => {
     try {
-      const { data } = await client.get("/tax-ledger/files", { params: { companyCode, yearMonth } });
+      const params = { yearMonth };
+      if (companyCode) {
+        params.companyCode = companyCode;
+      }
+      const { data } = await client.get("/tax-ledger/files", { params });
       setRows(asArray(data));
     } catch {
       setRows([]);
@@ -255,7 +252,7 @@ function FilePanel({ companyCode }) {
 
   useEffect(() => {
     setPageCurrent(1);
-    load({ silentNoCompany: true });
+    load();
   }, [companyCode, yearMonth]);
 
   const loadCompanyOptions = async (keyword = "") => {
@@ -462,7 +459,7 @@ function FilePanel({ companyCode }) {
             value={dayjs(yearMonth, "YYYY-MM")}
             onChange={(_, dateString) => setYearMonth(dateString)}
           />
-          <Button onClick={() => load({ silentNoCompany: false })}>刷新</Button>
+          <Button onClick={load}>刷新</Button>
         </Space>
       )}
     >
@@ -694,6 +691,7 @@ function FilePanel({ companyCode }) {
             filterIcon: (filtered) => <FilterFilled style={{ color: filtered ? "#1677ff" : undefined }} />,
             onFilter: (value, record) => String(record?.fileCategory ?? "") === String(value ?? "")
           },
+          { title: "公司代码", dataIndex: "companyCode", render: (v) => v || "-" },
           { title: "文件名", dataIndex: "fileName" },
           { title: "文件大小", dataIndex: "fileSize", render: (v) => formatFileSize(v) },
           { title: "创建人", dataIndex: "createByName", render: (v, row) => v || row?.createBy || "-" },

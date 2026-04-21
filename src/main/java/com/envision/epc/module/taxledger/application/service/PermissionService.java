@@ -109,6 +109,32 @@ public class PermissionService {
         }
     }
 
+    /**
+     * 是否可访问全部公司（超管或临时放行账号）
+     */
+    public boolean canAccessAllCompanies() {
+        String currentUserCode = currentUserCode();
+        return isTempBypassUser(currentUserCode) || isSuperAdmin(currentUserCode);
+    }
+
+    /**
+     * 当前用户已授权公司代码列表（去重）
+     */
+    public List<String> listGrantedCompanyCodes() {
+        if (canAccessAllCompanies()) {
+            return List.of();
+        }
+        String currentUserCode = currentUserCode();
+        return permissionMapper.selectList(new LambdaQueryWrapper<UserPermission>()
+                        .eq(UserPermission::getIsDeleted, 0)
+                        .eq(UserPermission::getUserId, currentUserCode))
+                .stream()
+                .map(UserPermission::getCompanyCode)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+    }
+
     private boolean isTempBypassUser(String userCode) {
         if (userCode == null) {
             return false;

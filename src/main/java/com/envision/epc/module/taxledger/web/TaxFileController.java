@@ -37,7 +37,8 @@ public class TaxFileController {
      * 查询文件列表
      */
     @GetMapping
-    public List<FileRecord> list(@RequestParam String companyCode, @RequestParam String yearMonth) {
+    public List<FileRecord> list(@RequestParam(required = false) String companyCode,
+                                 @RequestParam String yearMonth) {
         return fileService.list(companyCode, yearMonth);
     }
 

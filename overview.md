@@ -58,7 +58,12 @@
 - 权限接口收敛：权限新增/批量新增/删除接口不再接收 `permissionLevel`，后端移除对应参数校验逻辑。
 - 数据湖拉取改为批量接口：入参为 `companyCodeList`，单次请求支持多公司并发拉取并汇总结果。
 - 数据湖Excel导出策略：采用 `EasyExcel + 固定列DTO + Assembler计算`，仅保留首行表头，第二行起写数据。
+- 数据湖导出映射实现细化：`DatalakeDTO -> DatalakeExportRowDTO` 通过 `MapStruct` 组件 `DatalakeExportAssembler` 统一转换，金额正负等规则集中在 Assembler。
+- 数据湖文件命名调整：改为 `文件类型中文-yyyyMMddHHmmss.xlsx`（示例：`其他科目明细-20260407155851.xlsx`）。
 - 前端统一错误提示：后端返回 `{code!=0,msg}` 时，必须弹出 `msg`，禁止“失败场景仍提示成功”。
+- 上传弹窗增强：新增“批量设置”能力，可一次性将公司代码/文件类别批量应用到当前待上传文件列表。
+- 文件类别展示增强：文件列表接口返回 `fileCategoryName`（中文名），前端“类别”列优先展示中文。
+- 文件中心交互补充：类别筛选移入表头下拉（支持多选+重置/确认），移除页面顶部重复类别下拉；文件列表新增“创建人/创建时间”列；文件大小前端按 KB 展示；分页风格与权限页保持一致（总数+页码+每页条数）。
 
 ---
 
@@ -258,11 +263,14 @@ VatSpecialItemConfig (N)
 | VAT_OUTPUT | 增值税销项 | 用户上传 |
 | VAT_INPUT_CERT | 增值税进项认证清单 | 用户上传 |
 | CUMULATIVE_PROJECT_TAX | 累计项目税收明细表 | 用户上传 |
-| DL_INCOME | 收入明细 | 数据湖 |
-| DL_OUTPUT | 销项明细 | 数据湖 |
-| DL_INPUT | 进项明细 | 数据湖 |
-| DL_INCOME_TAX | 所得税明细 | 数据湖 |
-| DL_OTHER | 其他科目明细 | 数据湖 |
+| DL_INCOME | 收入明细 | 用户上传/数据湖 |
+| DL_OUTPUT | 销项明细 | 用户上传/数据湖 |
+| DL_INPUT | 进项明细 | 用户上传/数据湖 |
+| DL_INCOME_TAX | 所得税明细 | 用户上传/数据湖 |
+| DL_OTHER | 其他科目明细 | 用户上传/数据湖 |
+
+**列表展示补充**：
+- 文件列表响应增加 `fileCategoryName`（中文类别名），用于前端“类别”列展示；`fileCategory`（枚举值）继续保留用于程序判定。
 
 
 **唯一约束**：业务唯一键为 `(company_code, year_month, file_category)`；物理实现采用“虚拟生成列 + 唯一索引”（仅约束 `is_deleted=0` 的有效数据），同键重复上传时覆盖旧记录（逻辑删除旧记录）。
@@ -834,7 +842,7 @@ public enum AccountTypeEnum {
 **实现方式**：
 - 使用 `EasyExcel`；
 - 定义固定列导出DTO（例如 `DatalakeExportRowDTO`），按 `@ExcelProperty(index=...)` 锁定列号；
-- 使用 Assembler 将 `DatalakeDTO -> DatalakeExportRowDTO`；
+- 使用 `MapStruct` Assembler（`DatalakeExportAssembler`）将 `DatalakeDTO -> DatalakeExportRowDTO`；
 - 所有复杂取值逻辑（如借贷方向影响金额正负）统一写在 Assembler 中，不在 DTO 注解层实现；
 - 写文件流程：`EasyExcel.write(outputStream, DatalakeExportRowDTO.class).sheet(sheetName).doWrite(rows)`。
 
@@ -1242,6 +1250,13 @@ public enum AccountTypeEnum {
 └─────────────────────────────────────────────────────────┘
 ```
 
+#### 6.3.1 文件中心列表交互补充（当前实现）
+- “类别”筛选放在表格列表头部下拉，支持多选，并提供“重置/确认”操作；
+- 页面顶部不再保留额外的类别下拉筛选控件；
+- 文件列表新增列：`创建人`、`创建时间`；
+- 文件大小在前端展示时统一换算为 KB（保留两位小数），底层存储仍使用字节；
+- 分页样式与权限页统一：右下角分页，显示总条数、页码与每页条数切换。
+
 ### 6.4 上传文件弹窗
 
 ```
@@ -1268,6 +1283,7 @@ public enum AccountTypeEnum {
 - 公司代码字段使用下拉选择，实时查询 `/tax-ledger/config/company-code`，不允许手输。
 - 类型字段取值为文件类别枚举（`file_category`）。
 - 仅允许 `.xlsx` 文件（前端选择阶段和后端接口阶段双重校验）。
+- 批量设置：弹窗提供“批量公司代码 + 批量类型”设置区，点击“批量应用”后将所选值覆盖应用到当前待上传列表全部行。
 
 ### 6.5 拉取数据湖弹窗
 
@@ -1493,11 +1509,11 @@ tax-ledger/
 │   │   │   ├── STAMP_TAX_{yearMonth}.xlsx
 │   │   │   └── ...
 │   │   ├── datalake/
-│   │   │   ├── DL_INCOME_{yearMonth}.xlsx
-│   │   │   ├── DL_OUTPUT_{yearMonth}.xlsx
-│   │   │   ├── DL_INPUT_{yearMonth}.xlsx
-│   │   │   ├── DL_INCOME_TAX_{yearMonth}.xlsx
-│   │   │   └── DL_OTHER_{yearMonth}.xlsx
+│   │   │   ├── 收入明细-{yyyyMMddHHmmss}.xlsx
+│   │   │   ├── 销项明细-{yyyyMMddHHmmss}.xlsx
+│   │   │   ├── 进项明细-{yyyyMMddHHmmss}.xlsx
+│   │   │   ├── 所得税明细-{yyyyMMddHHmmss}.xlsx
+│   │   │   └── 其他科目明细-{yyyyMMddHHmmss}.xlsx
 │   │   └── ledger/
 │   │       └── 税务台账_{companyName}_{yearMonth}.xlsx
 ```
@@ -1507,7 +1523,7 @@ tax-ledger/
 | 文件类型 | 命名格式 | 示例 |
 |---------|---------|------|
 | 上传文件 | `{category}_{yearMonth}_{timestamp}.xlsx` | `BS_2026-03_1711776000.xlsx` |
-| 数据湖文件 | `DL_{category}_{yearMonth}.xlsx` | `DL_INCOME_2026-03.xlsx` |
+| 数据湖文件 | `{fileTypeName}-{yyyyMMddHHmmss}.xlsx` | `其他科目明细-20260407155851.xlsx` |
 | 台账文件 | `税务台账_{companyName}_{yearMonth}.xlsx` | `税务台账_上海睿景_2026-03.xlsx` |
 
 ---
