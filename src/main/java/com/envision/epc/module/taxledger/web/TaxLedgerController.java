@@ -1,65 +1,49 @@
 package com.envision.epc.module.taxledger.web;
 
-import com.envision.epc.module.taxledger.application.command.ConfirmStageCommand;
-import com.envision.epc.module.taxledger.application.command.CreateLedgerRunCommand;
-import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
-import com.envision.epc.module.taxledger.application.service.TaxLedgerService;
-import com.envision.epc.module.taxledger.domain.LedgerRun;
+import com.envision.epc.module.taxledger.application.command.CreateLedgerJobCommand;
+import com.envision.epc.module.taxledger.application.dto.LedgerJobListDTO;
+import com.envision.epc.module.taxledger.application.service.LedgerJobService;
+import com.envision.epc.module.taxledger.domain.LedgerJob;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
-import java.util.List;
 
 /**
- * 台账运行接口
+ * 台账任务接口（单按钮任务流）
  */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/tax-ledger/ledger")
 public class TaxLedgerController {
-    private final TaxLedgerService ledgerService;
+    private final LedgerJobService ledgerJobService;
 
-    /**
-     * 创建运行
-     */
-    @PostMapping("/runs")
-    public LedgerRunDetailDTO createRun(@RequestBody CreateLedgerRunCommand command) {
-        return ledgerService.createRun(command);
+    @PostMapping("/jobs")
+    public LedgerJob createJob(@RequestBody CreateLedgerJobCommand command) {
+        return ledgerJobService.createJob(command);
     }
 
-    /**
-     * 查询运行详情
-     */
-    @GetMapping("/runs/{runId}")
-    public LedgerRunDetailDTO runDetail(@PathVariable Long runId) {
-        return ledgerService.getRunDetail(runId);
+    @GetMapping("/jobs")
+    public LedgerJobListDTO listJobs(@RequestParam(required = false) String companyCode,
+                                     @RequestParam(required = false) String yearMonth,
+                                     @RequestParam(defaultValue = "1") Integer page,
+                                     @RequestParam(defaultValue = "10") Integer size) {
+        return ledgerJobService.list(companyCode, yearMonth, page, size);
     }
 
-    /**
-     * 人工确认批次（GATED模式）
-     */
-    @PostMapping("/runs/{runId}/confirm")
-    public LedgerRunDetailDTO confirm(@PathVariable Long runId, @RequestBody ConfirmStageCommand command) {
-        return ledgerService.confirm(runId, command);
+    @GetMapping("/jobs/{jobId}")
+    public LedgerJob jobDetail(@PathVariable Long jobId) {
+        return ledgerJobService.detail(jobId);
     }
 
-    /**
-     * 查询某公司某账期运行历史
-     */
-    @GetMapping("/{companyCode}/{yearMonth}/runs")
-    public List<LedgerRun> listRuns(@PathVariable String companyCode, @PathVariable String yearMonth) {
-        return ledgerService.listRuns(companyCode, yearMonth);
+    @PostMapping("/jobs/{jobId}/retry")
+    public LedgerJob retry(@PathVariable Long jobId) {
+        return ledgerJobService.retry(jobId);
     }
 
-    /**
-     * 下载最终台账
-     */
-    @GetMapping("/{companyCode}/{yearMonth}/download")
-    public void download(@PathVariable String companyCode,
-                         @PathVariable String yearMonth,
-                         HttpServletResponse response) throws IOException {
-        ledgerService.downloadFinalLedger(companyCode, yearMonth, response);
+    @GetMapping("/jobs/{jobId}/download")
+    public void download(@PathVariable Long jobId, HttpServletResponse response) throws IOException {
+        ledgerJobService.download(jobId, response);
     }
 }

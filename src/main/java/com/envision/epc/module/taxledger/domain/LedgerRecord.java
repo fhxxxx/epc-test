@@ -19,7 +19,7 @@ public class LedgerRecord extends AuditingEntity {
     private String companyCode;
 
     /** 账期（yyyy-MM） */
-    @TableField("`year_month`")
+    @TableField("period_month")
     private String yearMonth;
 
     /** 台账文件名 */

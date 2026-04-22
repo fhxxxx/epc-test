@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS t_ledger_job (
+    id BIGINT PRIMARY KEY,
+    company_code VARCHAR(20) NOT NULL,
+    period_month VARCHAR(7) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    run_id BIGINT NULL,
+    error_msg VARCHAR(1000) NULL,
+    started_at DATETIME NULL,
+    ended_at DATETIME NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    KEY idx_job_company_month_create_time (company_code, period_month, create_time),
+    KEY idx_job_status (status),
+    KEY idx_job_run_id (run_id)
+);

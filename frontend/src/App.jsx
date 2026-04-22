@@ -772,87 +772,142 @@ function FilePanel({ companyCode }) {
 
 function LedgerPanel({ companyCode }) {
   const [yearMonth, setYearMonth] = useState("2026-01");
-  const [mode, setMode] = useState("AUTO");
   const [rows, setRows] = useState([]);
+  const [pageCurrent, setPageCurrent] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [runDetail, setRunDetail] = useState(null);
+  const [jobDetail, setJobDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const runningStatuses = ["VALIDATING", "GENERATING"];
+  const failedStatuses = ["VALIDATION_FAILED", "FAILED"];
+  const statusTextMap = {
+    PENDING: "排队中",
+    VALIDATING: "校验中",
+    VALIDATION_FAILED: "校验失败",
+    GENERATING: "生成中",
+    SUCCESS: "成功",
+    FAILED: "失败"
+  };
+  const statusColorMap = {
+    PENDING: "default",
+    VALIDATING: "processing",
+    VALIDATION_FAILED: "error",
+    GENERATING: "processing",
+    SUCCESS: "success",
+    FAILED: "error"
+  };
+  const formatDateTime = (value) => {
+    if (!value) return "-";
+    const parsed = dayjs(value);
+    return parsed.isValid() ? parsed.format("YYYY-MM-DD HH:mm:ss") : String(value);
+  };
 
   const load = async () => {
     if (!companyCode) {
       setRows([]);
+      setTotal(0);
       return;
     }
     try {
-      const { data } = await client.get(`/tax-ledger/ledger/${companyCode}/${yearMonth}/runs`);
-      setRows(asArray(data));
+      const { data } = await client.get("/tax-ledger/ledger/jobs", {
+        params: { companyCode, yearMonth, page: pageCurrent, size: pageSize }
+      });
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setRows(items);
+      setTotal(Number(data?.total ?? items.length));
     } catch {
       setRows([]);
+      setTotal(0);
     }
   };
 
   useEffect(() => {
     load();
-  }, [companyCode, yearMonth]);
+  }, [companyCode, yearMonth, pageCurrent, pageSize]);
 
   useEffect(() => {
-    if (!rows.some((item) => item.status === "RUNNING" || item.status === "PAUSED")) {
+    if (!rows.some((item) => runningStatuses.includes(item?.status))) {
       return undefined;
     }
     const timer = setInterval(() => {
       load();
     }, 5000);
     return () => clearInterval(timer);
-  }, [rows, companyCode, yearMonth]);
+  }, [rows, companyCode, yearMonth, pageCurrent, pageSize]);
 
-  const openRunDetail = async (runId) => {
+  const openJobDetail = async (jobId) => {
     try {
       setDetailLoading(true);
-      const { data } = await client.get(`/tax-ledger/ledger/runs/${runId}`);
-      setRunDetail(data);
+      const { data } = await client.get(`/tax-ledger/ledger/jobs/${jobId}`);
+      setJobDetail(data);
       setDetailOpen(true);
     } catch {
-      setRunDetail(null);
+      setJobDetail(null);
     } finally {
       setDetailLoading(false);
     }
   };
 
+  const createJob = async () => {
+    if (!companyCode) {
+      message.warning("请先选择公司");
+      return;
+    }
+    try {
+      setCreating(true);
+      await client.post("/tax-ledger/ledger/jobs", { companyCode, yearMonth });
+      message.success("已创建台账任务");
+      setPageCurrent(1);
+      await load();
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const retryJob = async (jobId) => {
+    try {
+      await client.post(`/tax-ledger/ledger/jobs/${jobId}/retry`);
+      message.success("已发起重试");
+      setPageCurrent(1);
+      await load();
+    } catch {
+      // 失败提示已由全局拦截器处理
+    }
+  };
+
+  const hasRunningJob = rows.some((item) => runningStatuses.includes(item?.status));
+
   return (
     <Card
-      title="台账运行"
+      title="台账任务"
       className="soft-card"
       extra={(
         <Space>
-          <Input value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} style={{ width: 120 }} />
+          <DatePicker
+            picker="month"
+            allowClear={false}
+            format="YYYY-MM"
+            value={dayjs(yearMonth, "YYYY-MM")}
+            onChange={(_, dateString) => {
+              setYearMonth(dateString);
+              setPageCurrent(1);
+            }}
+          />
           <Button onClick={load}>刷新</Button>
         </Space>
       )}
     >
       <Space style={{ marginBottom: 16 }}>
-        <Select
-          value={mode}
-          onChange={setMode}
-          options={[{ value: "AUTO", label: "AUTO" }, { value: "GATED", label: "GATED" }]}
-          style={{ width: 120 }}
-        />
         <Button
           type="primary"
-          onClick={async () => {
-            try {
-              await client.post("/tax-ledger/ledger/runs", { companyCode, yearMonth, mode });
-              message.success("已发起台账生成");
-              load();
-            } catch {
-              // 失败提示已由全局拦截器处理
-            }
-          }}
-          disabled={!companyCode}
+          onClick={createJob}
+          loading={creating}
+          disabled={!companyCode || hasRunningJob}
         >
-          发起生成
-        </Button>
-        <Button onClick={() => window.open(`/tax-ledger/ledger/${companyCode}/${yearMonth}/download`, "_blank")}>
-          下载最终台账
+          生成台账
         </Button>
       </Space>
 
@@ -860,44 +915,59 @@ function LedgerPanel({ companyCode }) {
         rowKey="id"
         dataSource={Array.isArray(rows) ? rows : []}
         columns={[
-          { title: "RunNo", dataIndex: "runNo" },
-          { title: "状态", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
-          { title: "当前批次", dataIndex: "currentBatch" },
+          { title: "任务ID", dataIndex: "id", width: 120 },
+          { title: "公司代码", dataIndex: "companyCode", width: 120 },
+          { title: "月份", dataIndex: "yearMonth", width: 120 },
           {
-            title: "详情",
+            title: "状态",
+            dataIndex: "status",
+            width: 120,
+            render: (v) => <Tag color={statusColorMap[v] || "default"}>{statusTextMap[v] || v}</Tag>
+          },
+          { title: "发起人", dataIndex: "createByName", render: (v, row) => v || row?.createBy || "-" },
+          { title: "开始时间", dataIndex: "startedAt", render: (v) => formatDateTime(v) },
+          { title: "结束时间", dataIndex: "endedAt", render: (v) => formatDateTime(v) },
+          {
+            title: "操作",
+            width: 220,
             render: (_, row) => (
               <Space>
-                <Button onClick={() => openRunDetail(row.id)}>查看</Button>
-                {row.status === "PAUSED" ? (
-                  <Button
-                    type="primary"
-                    onClick={async () => {
-                      try {
-                        await client.post(`/tax-ledger/ledger/runs/${row.id}/confirm`, {
-                          batchNo: row.currentBatch
-                        });
-                        message.success("已继续执行");
-                        load();
-                        if (detailOpen) {
-                          openRunDetail(row.id);
-                        }
-                      } catch {
-                        // 失败提示已由全局拦截器处理
-                      }
-                    }}
-                  >
-                    继续执行
-                  </Button>
-                ) : null}
+                <Button onClick={() => openJobDetail(row.id)}>查看</Button>
+                <Button
+                  disabled={row.status !== "SUCCESS"}
+                  onClick={() => window.open(`/tax-ledger/ledger/jobs/${row.id}/download`, "_blank")}
+                >
+                  下载
+                </Button>
+                <Button
+                  disabled={!failedStatuses.includes(row.status)}
+                  onClick={() => retryJob(row.id)}
+                >
+                  重试
+                </Button>
               </Space>
             )
           }
         ]}
+        pagination={{
+          current: pageCurrent,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          pageSizeOptions: ["10", "20", "50", "100"],
+          showTotal: (count) => `共 ${count} 条`,
+          locale: { items_per_page: "/页" },
+          onChange: (current, size) => {
+            setPageCurrent(current);
+            setPageSize(size);
+          },
+          position: ["bottomRight"]
+        }}
       />
       <Modal
-        title="运行详情"
+        title="任务详情"
         open={detailOpen}
-        width={960}
+        width={720}
         footer={null}
         onCancel={() => setDetailOpen(false)}
       >
@@ -906,30 +976,19 @@ function LedgerPanel({ companyCode }) {
         ) : (
           <Space direction="vertical" style={{ width: "100%" }}>
             <Space>
-              <Text>RunId: {runDetail?.runId ?? "-"}</Text>
-              <Tag>{runDetail?.status ?? "-"}</Tag>
-              <Text>当前批次: {runDetail?.currentBatch ?? "-"}</Text>
+              <Text>任务ID: {jobDetail?.id ?? "-"}</Text>
+              <Tag color={statusColorMap[jobDetail?.status] || "default"}>
+                {statusTextMap[jobDetail?.status] || jobDetail?.status || "-"}
+              </Tag>
             </Space>
-            {runDetail?.blockingManualAction ? (
-              <Card size="small" title="阻塞人工动作">
-                <div>动作: {runDetail.blockingManualAction.actionCode}</div>
-                <div>提示: {runDetail.blockingManualAction.hint}</div>
-                <div>必填字段: {(runDetail.blockingManualAction.requiredFields || []).join(", ")}</div>
-              </Card>
-            ) : null}
-            <Table
-              rowKey={(item) => `${item.nodeCode}-${item.batchNo}`}
-              size="small"
-              pagination={false}
-              dataSource={Array.isArray(runDetail?.tasks) ? runDetail.tasks : []}
-              columns={[
-                { title: "节点", dataIndex: "nodeCode" },
-                { title: "批次", dataIndex: "batchNo" },
-                { title: "状态", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
-                { title: "依赖", dataIndex: "dependsOn" },
-                { title: "错误", dataIndex: "errorMsg" }
-              ]}
-            />
+            <Text>公司代码: {jobDetail?.companyCode || "-"}</Text>
+            <Text>月份: {jobDetail?.yearMonth || "-"}</Text>
+            <Text>RunId: {jobDetail?.runId || "-"}</Text>
+            <Text>开始时间: {formatDateTime(jobDetail?.startedAt)}</Text>
+            <Text>结束时间: {formatDateTime(jobDetail?.endedAt)}</Text>
+            <Text type={jobDetail?.errorMsg ? "danger" : undefined}>
+              错误信息: {jobDetail?.errorMsg || "-"}
+            </Text>
           </Space>
         )}
       </Modal>

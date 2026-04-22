@@ -19,7 +19,7 @@ public class FileRecord extends AuditingEntity {
     private String companyCode;
 
     /** 账期（yyyy-MM） */
-    @TableField("`year_month`")
+    @TableField("period_month")
     private String yearMonth;
 
     /** 文件名 */
