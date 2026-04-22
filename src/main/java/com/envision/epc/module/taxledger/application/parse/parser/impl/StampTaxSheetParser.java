@@ -40,7 +40,6 @@ public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRow
                     .head(StampDutySummaryRowDTO.class)
                     .sheet()
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getContractCategory()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
@@ -48,9 +47,4 @@ public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRow
             return result;
         }
     }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
 }
-

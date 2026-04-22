@@ -40,7 +40,6 @@ public class BsSheetParser implements SheetParser<List<BsStatementRowDTO>> {
                     .head(BsStatementRowDTO.class)
                     .sheet()
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getItemName()) && isBlank(row.getLineNo()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
@@ -48,9 +47,4 @@ public class BsSheetParser implements SheetParser<List<BsStatementRowDTO>> {
             return result;
         }
     }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
 }
-

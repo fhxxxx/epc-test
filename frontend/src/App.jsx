@@ -30,21 +30,23 @@ import "./App.css";
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
-const FILE_CATEGORIES = [
+const DEFAULT_UPLOAD_FILE_CATEGORIES = [
   { value: "BS", label: "资产负债表（BS）" },
   { value: "PL", label: "利润表（PL）" },
-  { value: "BS_APPENDIX_TAX_PAYABLE", label: "BS附表-应交税费" },
-  { value: "PL_APPENDIX_2320", label: "PL附表（2320/2355）" },
+  { value: "BS_APPENDIX_TAX_PAYABLE", label: "BS附表-应交税费科目余额表" },
   { value: "PL_APPENDIX_PROJECT", label: "PL附表（项目公司）" },
   { value: "STAMP_TAX", label: "印花税明细" },
   { value: "VAT_OUTPUT", label: "增值税销项" },
   { value: "VAT_INPUT_CERT", label: "增值税进项认证清单" },
   { value: "CUMULATIVE_PROJECT_TAX", label: "累计项目税收明细表" },
-  { value: "DL_INCOME", label: "收入明细（数据湖）" },
-  { value: "DL_OUTPUT", label: "销项明细（数据湖）" },
-  { value: "DL_INPUT", label: "进项明细（数据湖）" },
-  { value: "DL_INCOME_TAX", label: "所得税明细（数据湖）" },
-  { value: "DL_OTHER", label: "其他科目明细（数据湖）" }
+  { value: "VAT_CHANGE_APPENDIX", label: "增值税变动表附表" },
+  { value: "CONTRACT_STAMP_DUTY_LEDGER", label: "合同印花税明细台账" },
+  { value: "MONTHLY_SETTLEMENT_TAX", label: "睿景景程月结数据表-报税" },
+  { value: "DL_INCOME", label: "收入明细" },
+  { value: "DL_OUTPUT", label: "销项明细" },
+  { value: "DL_INPUT", label: "进项明细" },
+  { value: "DL_INCOME_TAX", label: "所得税明细" },
+  { value: "DL_OTHER", label: "其他科目明细" }
 ];
 
 const CONFIG_META = [
@@ -213,6 +215,7 @@ function FilePanel({ companyCode }) {
   const [pullSubmitting, setPullSubmitting] = useState(false);
   const [companyOptions, setCompanyOptions] = useState([]);
   const [companyLoading, setCompanyLoading] = useState(false);
+  const [uploadFileCategoryOptions, setUploadFileCategoryOptions] = useState(DEFAULT_UPLOAD_FILE_CATEGORIES);
   const [pullForm] = Form.useForm();
   const formatFileSize = (bytes) => {
     const size = Number(bytes);
@@ -225,8 +228,8 @@ function FilePanel({ companyCode }) {
     return parsed.isValid() ? parsed.format("YYYY-MM-DD HH:mm:ss") : String(value);
   };
   const categoryLabelMap = useMemo(
-    () => Object.fromEntries(FILE_CATEGORIES.map((item) => [item.value, item.label])),
-    []
+    () => Object.fromEntries(uploadFileCategoryOptions.map((item) => [item.value, item.label])),
+    [uploadFileCategoryOptions]
   );
 
   const periodOptions = useMemo(
@@ -281,12 +284,38 @@ function FilePanel({ companyCode }) {
     }
   };
 
+  const loadUploadFileCategoryOptions = async () => {
+    try {
+      const { data } = await client.get("/tax-ledger/files/categories", {
+        params: { manualUpload: true }
+      });
+      const list = asArray(data);
+      if (list.length > 0) {
+        setUploadFileCategoryOptions(
+          list.map((item) => ({
+            value: item.value,
+            label: item.label
+          }))
+        );
+      } else {
+        setUploadFileCategoryOptions(DEFAULT_UPLOAD_FILE_CATEGORIES);
+      }
+    } catch {
+      setUploadFileCategoryOptions(DEFAULT_UPLOAD_FILE_CATEGORIES);
+    }
+  };
+
+  useEffect(() => {
+    loadUploadFileCategoryOptions();
+  }, []);
+
   const onOpenUploadModal = () => {
     setUploadModalOpen(true);
     setUploadRows([]);
     setBatchCompanyCode(companyCode || undefined);
     setBatchFileCategory(category);
     loadCompanyOptions();
+    loadUploadFileCategoryOptions();
   };
 
   const addUploadFile = (file) => {
@@ -517,7 +546,7 @@ function FilePanel({ companyCode }) {
             value={batchFileCategory}
             placeholder="请选择类型"
             style={{ width: 240 }}
-            options={FILE_CATEGORIES}
+            options={uploadFileCategoryOptions}
             onChange={setBatchFileCategory}
           />
           <Button
@@ -561,7 +590,7 @@ function FilePanel({ companyCode }) {
                   value={row.fileCategory}
                   placeholder="请选择类型"
                   style={{ width: "100%" }}
-                  options={FILE_CATEGORIES}
+                  options={uploadFileCategoryOptions}
                   onChange={(value) => updateUploadRow(row.uid, { fileCategory: value })}
                 />
               )
@@ -653,7 +682,7 @@ function FilePanel({ companyCode }) {
             render: (v, row) => <Tag>{row?.fileCategoryName || categoryLabelMap[v] || v}</Tag>,
             filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
               const checkedValues = Array.isArray(selectedKeys) ? selectedKeys : [];
-              const options = FILE_CATEGORIES.map((item) => ({ value: item.value, label: item.label }));
+              const options = uploadFileCategoryOptions.map((item) => ({ value: item.value, label: item.label }));
 
               return (
                 <div style={{ width: 220, padding: 10 }}>

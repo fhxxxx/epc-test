@@ -1,6 +1,5 @@
 package com.envision.epc.module.taxledger.application.parse.parser.impl;
 
-import cn.hutool.core.text.CharSequenceUtil;
 import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
@@ -30,9 +29,6 @@ public class BsAppendixSheetParser implements SheetParser<List<BsAppendixUploadD
                     .head(BsAppendixUploadDTO.class)
                     .sheet()
                     .doReadSync();
-
-            rows.removeIf(row -> CharSequenceUtil.isBlank(row.getCompanyCode())
-                    && CharSequenceUtil.isBlank((row.getGlAccount())));
             result.setData(rows);
             return result;
         } catch (Exception e) {

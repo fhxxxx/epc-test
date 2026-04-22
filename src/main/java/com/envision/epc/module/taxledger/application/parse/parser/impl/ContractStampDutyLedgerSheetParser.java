@@ -40,16 +40,11 @@ public class ContractStampDutyLedgerSheetParser implements SheetParser<List<Cont
                     .head(ContractStampDutyLedgerItemDTO.class)
                     .sheet()
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getSerialNo()) && isBlank(row.getContractNoOrCode()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
             result.addIssue("INVALID_WORKBOOK: " + e.getMessage());
             return result;
         }
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

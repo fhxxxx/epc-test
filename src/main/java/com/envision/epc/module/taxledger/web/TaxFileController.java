@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -20,6 +21,14 @@ import java.util.List;
 @RequestMapping("/tax-ledger/files")
 public class TaxFileController {
     private final FileService fileService;
+
+    @GetMapping("/categories")
+    public List<FileCategoryOption> categories(@RequestParam(defaultValue = "false") boolean manualUpload) {
+        return Arrays.stream(FileCategoryEnum.values())
+                .filter(item -> !manualUpload || item.isManualUpload())
+                .map(item -> new FileCategoryOption(item.name(), item.getDisplayName(), item.isManualUpload()))
+                .toList();
+    }
 
     /**
      * 上传文件
@@ -58,5 +67,8 @@ public class TaxFileController {
     @GetMapping("/{id}/download")
     public void download(@PathVariable Long id, HttpServletResponse response) throws IOException {
         fileService.download(id, response);
+    }
+
+    public record FileCategoryOption(String value, String label, boolean manualUpload) {
     }
 }

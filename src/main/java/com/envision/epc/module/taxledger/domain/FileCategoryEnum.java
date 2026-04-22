@@ -26,11 +26,11 @@ public enum FileCategoryEnum {
     VAT_TABLE_ONE_CUMULATIVE_OUTPUT("增值税表一 累计销项-2320、2355", false, EngineType.ASPOSE, "增值税表一 累计销项-2320、2355"),
     TAX_ACCOUNTING_DIFFERENCE_MONITOR("账税差异监控-2320、2355", false, EngineType.ASPOSE, "账税差异监控-2320、2355"),
     UNINVOICED_MONITOR("未开票数监控", false, EngineType.ASPOSE, "未开票数监控"),
-    DL_INCOME("收入明细", false, EngineType.EASY_EXCEL, null),
-    DL_OUTPUT("销项明细", false, EngineType.EASY_EXCEL, null),
-    DL_INPUT("进项明细", false, EngineType.EASY_EXCEL, null),
-    DL_INCOME_TAX("所得税明细", false, EngineType.EASY_EXCEL, null),
-    DL_OTHER("其他科目明细", false, EngineType.EASY_EXCEL, null);
+    DL_INCOME("收入明细", true, EngineType.EASY_EXCEL, null),
+    DL_OUTPUT("销项明细", true, EngineType.EASY_EXCEL, null),
+    DL_INPUT("进项明细", true, EngineType.EASY_EXCEL, null),
+    DL_INCOME_TAX("所得税明细", true, EngineType.EASY_EXCEL, null),
+    DL_OTHER("其他科目明细", true, EngineType.EASY_EXCEL, null);
 
     private final String displayName;
     private final boolean manualUpload;

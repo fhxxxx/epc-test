@@ -40,7 +40,6 @@ public class PlSheetParser implements SheetParser<List<PlStatementRowDTO>> {
                     .head(PlStatementRowDTO.class)
                     .sheet()
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getItemName()) && isBlank(row.getLineNo()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
@@ -48,9 +47,4 @@ public class PlSheetParser implements SheetParser<List<PlStatementRowDTO>> {
             return result;
         }
     }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
 }
-

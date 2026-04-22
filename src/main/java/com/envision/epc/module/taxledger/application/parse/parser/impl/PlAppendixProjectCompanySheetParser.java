@@ -40,16 +40,11 @@ public class PlAppendixProjectCompanySheetParser implements SheetParser<List<PlA
                     .head(PlAppendixProjectCompanyUploadDTO.class)
                     .sheet()
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getSplitBasis()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
             result.addIssue("INVALID_WORKBOOK: " + e.getMessage());
             return result;
         }
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

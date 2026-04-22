@@ -9,6 +9,7 @@ import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,6 +33,13 @@ public class VatInputCertificationSheetParser implements SheetParser<List<VatInp
 
     @Override
     public ParseResult<List<VatInputCertificationItemDTO>> parse(InputStream inputStream, ParseContext context) {
+        if (inputStream == null) {
+            return ParseResult.<List<VatInputCertificationItemDTO>>builder()
+                    .data(List.of())
+                    .issues(new ArrayList<>(List.of("EMPTY_FILE: inputStream is null")))
+                    .build();
+        }
+
         ParseResult<List<VatInputCertificationItemDTO>> result = ParseResult.<List<VatInputCertificationItemDTO>>builder()
                 .data(List.of())
                 .build();
@@ -41,16 +49,11 @@ public class VatInputCertificationSheetParser implements SheetParser<List<VatInp
                     .sheet()
                     .headRowNumber(3)
                     .doReadSync();
-            rows.removeIf(row -> isBlank(row.getSerialNo()) && isBlank(row.getInvoiceNo()));
             result.setData(rows);
             return result;
         } catch (Exception e) {
             result.addIssue("INVALID_WORKBOOK: " + e.getMessage());
             return result;
         }
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

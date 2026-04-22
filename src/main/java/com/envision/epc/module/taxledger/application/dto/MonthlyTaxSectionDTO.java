@@ -10,6 +10,9 @@ public class MonthlyTaxSectionDTO {
     /** 第一行标题（例如：建安9%） */
     private String title;
 
+    /** 从标题提取税率（例如：6%） */
+    private String taxRate;
+
     /** 成本 */
     private BigDecimal cost;
 

@@ -77,6 +77,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
 
         int section1HeaderIdx = findHeaderRow(rows, List.of("序号", "数电发票号码", "税收分类编码"));
         int section2HeaderIdx = findHeaderRow(rows, List.of("税率/征收率", "开具蓝字发票金额", "作废红字发票税额"));
+        int section2TitleIdx = findHeaderRow(rows, List.of("按税率（征收率）统计表"));
         if (section1HeaderIdx < 0) {
             result.addIssue("增值税销项：未识别到发票明细表头");
             return result;
@@ -89,12 +90,15 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
             result.addIssue("增值税销项：表结构异常，统计表头位置错误");
             return result;
         }
+        if (section2TitleIdx < 0 || section2TitleIdx > section2HeaderIdx) {
+            section2TitleIdx = section2HeaderIdx;
+        }
 
         Map<String, Integer> section1Cols = buildHeaderIndex(rows.get(section1HeaderIdx));
         Map<String, Integer> section2Cols = buildHeaderIndex(rows.get(section2HeaderIdx));
 
-        parseSection1(rows, section1HeaderIdx + 1, section2HeaderIdx - 1, section1Cols, data, result);
-        parseSection2(rows, section2HeaderIdx + 1, rows.size() - 1, section2Cols, data, result);
+        parseSection1(rows, section1HeaderIdx + 1, section2TitleIdx - 1, section1Cols, data);
+        parseSection2(rows, section2HeaderIdx + 1, rows.size() - 1, section2Cols, data);
         return result;
     }
 
@@ -102,8 +106,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
                                       int startIdx,
                                       int endIdx,
                                       Map<String, Integer> cols,
-                                      VatOutputSheetUploadDTO target,
-                                      ParseResult<VatOutputSheetUploadDTO> result) {
+                                      VatOutputSheetUploadDTO target) {
         Integer serialNoCol = cols.get("序号");
         Integer digitalInvoiceNoCol = cols.get("数电发票号码");
         Integer sellerTaxpayerIdCol = cols.get("销方识别号");
@@ -134,17 +137,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
             item.setInvoiceDate(get(row, invoiceDateCol));
             item.setTaxClassificationCode(get(row, taxClassificationCodeCol));
             item.setSpecificBusinessType(get(row, specificBusinessTypeCol));
-
-            if (!StringUtils.hasText(item.getSerialNo())
-                    && !StringUtils.hasText(item.getDigitalInvoiceNo())
-                    && !StringUtils.hasText(item.getSellerTaxpayerId())) {
-                continue;
-            }
             target.getInvoiceDetails().add(item);
-        }
-
-        if (target.getInvoiceDetails().isEmpty()) {
-            result.addIssue("增值税销项：发票明细区未解析到有效数据");
         }
     }
 
@@ -152,8 +145,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
                                       int startIdx,
                                       int endIdx,
                                       Map<String, Integer> cols,
-                                      VatOutputSheetUploadDTO target,
-                                      ParseResult<VatOutputSheetUploadDTO> result) {
+                                      VatOutputSheetUploadDTO target) {
         Integer serialNoCol = cols.get("序号");
         Integer invoiceStatusCol = firstPresent(cols, "发票种类", "发票状态");
         Integer taxRateCol = cols.get("税率/征收率");
@@ -184,17 +176,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
             item.setRedInvoiceTaxAmount(ParserValueUtils.toBigDecimal(get(row, redTaxAmountCol)));
             item.setCanceledRedInvoiceAmount(ParserValueUtils.toBigDecimal(get(row, canceledRedAmountCol)));
             item.setCanceledRedInvoiceTaxAmount(ParserValueUtils.toBigDecimal(get(row, canceledRedTaxAmountCol)));
-
-            if (!StringUtils.hasText(item.getSerialNo())
-                    && !StringUtils.hasText(item.getInvoiceStatus())
-                    && item.getTaxRateOrLevyRate() == null) {
-                continue;
-            }
             target.getTaxRateSummaries().add(item);
-        }
-
-        if (target.getTaxRateSummaries().isEmpty()) {
-            result.addIssue("增值税销项：按税率统计区未解析到有效数据");
         }
     }
 
