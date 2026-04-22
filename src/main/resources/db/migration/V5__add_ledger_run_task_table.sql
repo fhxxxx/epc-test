@@ -1,0 +1,28 @@
+CREATE TABLE IF NOT EXISTS t_ledger_run_task (
+    id BIGINT PRIMARY KEY,
+    run_id BIGINT NOT NULL,
+    node_code VARCHAR(20) NOT NULL,
+    batch_no INT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    depends_on VARCHAR(200) NULL,
+    manual_action_type VARCHAR(80) NULL,
+    input_refs VARCHAR(1000) NULL,
+    output_blob_path VARCHAR(500) NULL,
+    error_msg VARCHAR(1000) NULL,
+    retry_count INT NOT NULL DEFAULT 0,
+    started_at DATETIME NULL,
+    ended_at DATETIME NULL,
+    is_deleted TINYINT NOT NULL DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    create_by VARCHAR(100) NOT NULL DEFAULT '',
+    create_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    update_by VARCHAR(100) NOT NULL DEFAULT '',
+    update_by_name VARCHAR(100) NOT NULL DEFAULT '',
+    uk_task_run_id_active BIGINT GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN run_id ELSE NULL END) VIRTUAL,
+    uk_task_node_code_active VARCHAR(20) GENERATED ALWAYS AS (CASE WHEN is_deleted = 0 THEN node_code ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uk_ledger_run_task_active (uk_task_run_id_active, uk_task_node_code_active),
+    KEY idx_ledger_run_task_run_batch (run_id, batch_no),
+    KEY idx_ledger_run_task_run_status (run_id, status)
+);
+

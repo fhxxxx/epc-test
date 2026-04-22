@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
@@ -774,6 +774,9 @@ function LedgerPanel({ companyCode }) {
   const [yearMonth, setYearMonth] = useState("2026-01");
   const [mode, setMode] = useState("AUTO");
   const [rows, setRows] = useState([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [runDetail, setRunDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const load = async () => {
     if (!companyCode) {
@@ -785,6 +788,33 @@ function LedgerPanel({ companyCode }) {
       setRows(asArray(data));
     } catch {
       setRows([]);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [companyCode, yearMonth]);
+
+  useEffect(() => {
+    if (!rows.some((item) => item.status === "RUNNING" || item.status === "PAUSED")) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      load();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [rows, companyCode, yearMonth]);
+
+  const openRunDetail = async (runId) => {
+    try {
+      setDetailLoading(true);
+      const { data } = await client.get(`/tax-ledger/ledger/runs/${runId}`);
+      setRunDetail(data);
+      setDetailOpen(true);
+    } catch {
+      setRunDetail(null);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -817,6 +847,7 @@ function LedgerPanel({ companyCode }) {
               // 失败提示已由全局拦截器处理
             }
           }}
+          disabled={!companyCode}
         >
           发起生成
         </Button>
@@ -835,11 +866,73 @@ function LedgerPanel({ companyCode }) {
           {
             title: "详情",
             render: (_, row) => (
-              <Button onClick={() => window.open(`/tax-ledger/ledger/runs/${row.id}`, "_blank")}>查看</Button>
+              <Space>
+                <Button onClick={() => openRunDetail(row.id)}>查看</Button>
+                {row.status === "PAUSED" ? (
+                  <Button
+                    type="primary"
+                    onClick={async () => {
+                      try {
+                        await client.post(`/tax-ledger/ledger/runs/${row.id}/confirm`, {
+                          batchNo: row.currentBatch
+                        });
+                        message.success("已继续执行");
+                        load();
+                        if (detailOpen) {
+                          openRunDetail(row.id);
+                        }
+                      } catch {
+                        // 失败提示已由全局拦截器处理
+                      }
+                    }}
+                  >
+                    继续执行
+                  </Button>
+                ) : null}
+              </Space>
             )
           }
         ]}
       />
+      <Modal
+        title="运行详情"
+        open={detailOpen}
+        width={960}
+        footer={null}
+        onCancel={() => setDetailOpen(false)}
+      >
+        {detailLoading ? (
+          <Text>加载中...</Text>
+        ) : (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Space>
+              <Text>RunId: {runDetail?.runId ?? "-"}</Text>
+              <Tag>{runDetail?.status ?? "-"}</Tag>
+              <Text>当前批次: {runDetail?.currentBatch ?? "-"}</Text>
+            </Space>
+            {runDetail?.blockingManualAction ? (
+              <Card size="small" title="阻塞人工动作">
+                <div>动作: {runDetail.blockingManualAction.actionCode}</div>
+                <div>提示: {runDetail.blockingManualAction.hint}</div>
+                <div>必填字段: {(runDetail.blockingManualAction.requiredFields || []).join(", ")}</div>
+              </Card>
+            ) : null}
+            <Table
+              rowKey={(item) => `${item.nodeCode}-${item.batchNo}`}
+              size="small"
+              pagination={false}
+              dataSource={Array.isArray(runDetail?.tasks) ? runDetail.tasks : []}
+              columns={[
+                { title: "节点", dataIndex: "nodeCode" },
+                { title: "批次", dataIndex: "batchNo" },
+                { title: "状态", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
+                { title: "依赖", dataIndex: "dependsOn" },
+                { title: "错误", dataIndex: "errorMsg" }
+              ]}
+            />
+          </Space>
+        )}
+      </Modal>
     </Card>
   );
 }

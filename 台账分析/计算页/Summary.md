@@ -1,4 +1,4 @@
-﻿# 台账 Sheet 分析报告 - Summary
+# 台账 Sheet 分析报告 - Summary
 
 适用文件：`税务台账生成逻辑_20260415V5.0(1).xlsx`  
 适用范围：单 sheet（`Summary `，注意页签末尾有空格）

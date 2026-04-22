@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 台账 Excel 生成服务（Aspose.Cells）
@@ -17,7 +18,10 @@ public class TaxLedgerExcelService {
     /**
      * 生成最终台账（V1 最小可运行版）
      */
-    public byte[] buildLedger(String companyCode, String yearMonth, List<FileRecord> files) throws Exception {
+    public byte[] buildLedger(String companyCode,
+                              String yearMonth,
+                              List<FileRecord> files,
+                              Map<String, Object> nodeOutputs) throws Exception {
         Workbook workbook = new Workbook();
         workbook.getWorksheets().get(0).setName("Summary");
         Worksheet summary = workbook.getWorksheets().get("Summary");
@@ -32,6 +36,7 @@ public class TaxLedgerExcelService {
         summary.getCells().get("A5").putValue("Input Category");
         summary.getCells().get("B5").putValue("File Name");
         summary.getCells().get("C5").putValue("File Size");
+        summary.getCells().get("E1").putValue("Node Outputs");
 
         int row = 6;
         for (FileRecord file : files) {
@@ -39,6 +44,13 @@ public class TaxLedgerExcelService {
             summary.getCells().get(row, 1).putValue(file.getFileName());
             summary.getCells().get(row, 2).putValue(file.getFileSize() == null ? 0 : file.getFileSize());
             row++;
+        }
+
+        int nodeRow = 2;
+        for (Map.Entry<String, Object> entry : nodeOutputs.entrySet()) {
+            summary.getCells().get(nodeRow, 4).putValue(entry.getKey());
+            summary.getCells().get(nodeRow, 5).putValue(String.valueOf(entry.getValue()));
+            nodeRow++;
         }
 
         Worksheet stage1 = workbook.getWorksheets().add("Batch1_Direct");

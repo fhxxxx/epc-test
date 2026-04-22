@@ -5,5 +5,6 @@ package com.envision.epc.module.taxledger.domain;
  */
 public enum LedgerArtifactTypeEnum {
     STAGE_SNAPSHOT,
+    NODE_OUTPUT_JSON,
     FINAL_LEDGER
 }
