@@ -1,5 +1,6 @@
 package com.envision.epc.module.taxledger.web;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.envision.epc.infrastructure.filter.upload.UploadFileType;
 import com.envision.epc.module.taxledger.application.service.FileService;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
@@ -21,12 +22,15 @@ import java.util.List;
 @RequestMapping("/tax-ledger/files")
 public class TaxFileController {
     private final FileService fileService;
+    private final ObjectMapper objectMapper;
 
     @GetMapping("/categories")
-    public List<FileCategoryOption> categories(@RequestParam(defaultValue = "false") boolean manualUpload) {
+    public List<FileCategoryOption> categories(@RequestParam(defaultValue = "false") boolean manualUpload,
+                                               @RequestParam(required = false) String companyCode) {
         return Arrays.stream(FileCategoryEnum.values())
                 .filter(item -> !manualUpload || item.isManualUpload())
-                .map(item -> new FileCategoryOption(item.name(), item.getDisplayName(), item.isManualUpload()))
+                .filter(item -> companyCode == null || companyCode.isBlank() || item.isAllowedForCompany(companyCode))
+                .map(item -> new FileCategoryOption(item.name(), item.getDisplayName(), item.isManualUpload(), item.getScope().name()))
                 .toList();
     }
 
@@ -69,6 +73,19 @@ public class TaxFileController {
         fileService.download(id, response);
     }
 
-    public record FileCategoryOption(String value, String label, boolean manualUpload) {
+    @GetMapping("/{id}/parsed-result")
+    public Object parsedResult(@PathVariable Long id) throws IOException {
+        String payload = fileService.loadParsedResultOrParse(id);
+        if (payload == null || payload.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(payload, Object.class);
+        } catch (Exception ignore) {
+            return payload;
+        }
+    }
+
+    public record FileCategoryOption(String value, String label, boolean manualUpload, String scope) {
     }
 }

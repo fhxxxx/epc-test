@@ -55,6 +55,9 @@ public class FileService {
         if (!isValidCompanyCode(companyCode)) {
             throw new BizException(ErrorCode.BAD_REQUEST, "companyCode not found");
         }
+        if (!category.isAllowedForCompany(companyCode)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "该公司不允许上传该文件类型");
+        }
 
         String originalName = file.getOriginalFilename();
         String filename = originalName == null ? "unknown.xlsx" : originalName;

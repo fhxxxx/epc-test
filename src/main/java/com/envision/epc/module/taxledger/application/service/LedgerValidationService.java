@@ -46,7 +46,6 @@ public class LedgerValidationService {
                 FileCategoryEnum.BS,
                 FileCategoryEnum.PL,
                 FileCategoryEnum.BS_APPENDIX_TAX_PAYABLE,
-                FileCategoryEnum.STAMP_TAX,
                 FileCategoryEnum.VAT_OUTPUT,
                 FileCategoryEnum.VAT_INPUT_CERT,
                 FileCategoryEnum.VAT_CHANGE_APPENDIX,
@@ -59,9 +58,10 @@ public class LedgerValidationService {
         if (isCompany2320Or2355(companyCode)) {
             required.add(FileCategoryEnum.PL_APPENDIX_2320);
             required.add(FileCategoryEnum.MONTHLY_SETTLEMENT_TAX);
+            required.add(FileCategoryEnum.STAMP_TAX);
+            required.add(FileCategoryEnum.CUMULATIVE_PROJECT_TAX);
         } else {
             required.add(FileCategoryEnum.PL_APPENDIX_PROJECT);
-            required.add(FileCategoryEnum.CUMULATIVE_PROJECT_TAX);
             required.add(FileCategoryEnum.CONTRACT_STAMP_DUTY_LEDGER);
         }
         return required;

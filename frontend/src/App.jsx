@@ -6,6 +6,7 @@ import {
   Col,
   ConfigProvider,
   DatePicker,
+  Empty,
   Form,
   Input,
   Layout,
@@ -14,6 +15,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -35,7 +37,7 @@ const DEFAULT_UPLOAD_FILE_CATEGORIES = [
   { value: "PL", label: "利润表（PL）" },
   { value: "BS_APPENDIX_TAX_PAYABLE", label: "BS附表-应交税费科目余额表" },
   { value: "PL_APPENDIX_PROJECT", label: "PL附表（项目公司）" },
-  { value: "STAMP_TAX", label: "印花税明细" },
+  { value: "STAMP_TAX", label: "印花税明细-2320、2355" },
   { value: "VAT_OUTPUT", label: "增值税销项" },
   { value: "VAT_INPUT_CERT", label: "增值税进项认证清单" },
   { value: "CUMULATIVE_PROJECT_TAX", label: "累计项目税收明细表" },
@@ -213,9 +215,15 @@ function FilePanel({ companyCode }) {
   const [batchFileCategory, setBatchFileCategory] = useState();
   const [pullModalOpen, setPullModalOpen] = useState(false);
   const [pullSubmitting, setPullSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewPayload, setPreviewPayload] = useState(null);
+  const [previewFileName, setPreviewFileName] = useState("");
   const [companyOptions, setCompanyOptions] = useState([]);
   const [companyLoading, setCompanyLoading] = useState(false);
   const [uploadFileCategoryOptions, setUploadFileCategoryOptions] = useState(DEFAULT_UPLOAD_FILE_CATEGORIES);
+  const [uploadCategoryOptionsByCompany, setUploadCategoryOptionsByCompany] = useState({});
   const [pullForm] = Form.useForm();
   const formatFileSize = (bytes) => {
     const size = Number(bytes);
@@ -231,6 +239,31 @@ function FilePanel({ companyCode }) {
     () => Object.fromEntries(uploadFileCategoryOptions.map((item) => [item.value, item.label])),
     [uploadFileCategoryOptions]
   );
+  const previewTableData = useMemo(() => {
+    if (!Array.isArray(previewPayload)) {
+      return [];
+    }
+    return previewPayload.map((item, index) => ({
+      ...(item && typeof item === "object" ? item : { value: item }),
+      __rowKey: index
+    }));
+  }, [previewPayload]);
+  const previewTableColumns = useMemo(() => {
+    if (!previewTableData.length) {
+      return [];
+    }
+    return Object.keys(previewTableData[0])
+      .filter((key) => key !== "__rowKey")
+      .map((key) => ({
+        title: key,
+        dataIndex: key,
+        render: (value) => {
+          if (value == null) return "-";
+          if (typeof value === "object") return JSON.stringify(value);
+          return String(value);
+        }
+      }));
+  }, [previewTableData]);
 
   const periodOptions = useMemo(
     () => Array.from({ length: 16 }, (_, i) => {
@@ -284,25 +317,56 @@ function FilePanel({ companyCode }) {
     }
   };
 
-  const loadUploadFileCategoryOptions = async () => {
+  const fetchUploadFileCategoryOptions = async (selectedCompanyCode) => {
     try {
-      const { data } = await client.get("/tax-ledger/files/categories", {
-        params: { manualUpload: true }
-      });
+      const params = { manualUpload: true };
+      if (selectedCompanyCode) {
+        params.companyCode = selectedCompanyCode;
+      }
+      const { data } = await client.get("/tax-ledger/files/categories", { params });
       const list = asArray(data);
       if (list.length > 0) {
-        setUploadFileCategoryOptions(
-          list.map((item) => ({
-            value: item.value,
-            label: item.label
-          }))
-        );
-      } else {
-        setUploadFileCategoryOptions(DEFAULT_UPLOAD_FILE_CATEGORIES);
+        return list.map((item) => ({
+          value: item.value,
+          label: item.label
+        }));
       }
+      return DEFAULT_UPLOAD_FILE_CATEGORIES;
     } catch {
-      setUploadFileCategoryOptions(DEFAULT_UPLOAD_FILE_CATEGORIES);
+      return DEFAULT_UPLOAD_FILE_CATEGORIES;
     }
+  };
+
+  const loadUploadFileCategoryOptions = async () => {
+    const options = await fetchUploadFileCategoryOptions();
+    setUploadFileCategoryOptions(options);
+  };
+
+  const ensureCompanyUploadCategoryOptions = async (selectedCompanyCode) => {
+    if (!selectedCompanyCode) {
+      return uploadFileCategoryOptions;
+    }
+    const cached = uploadCategoryOptionsByCompany[selectedCompanyCode];
+    if (cached && cached.length) {
+      return cached;
+    }
+    const options = await fetchUploadFileCategoryOptions(selectedCompanyCode);
+    setUploadCategoryOptionsByCompany((prev) => ({ ...prev, [selectedCompanyCode]: options }));
+    return options;
+  };
+
+  const getUploadCategoryOptionsByCompany = (selectedCompanyCode) => {
+    if (!selectedCompanyCode) {
+      return uploadFileCategoryOptions;
+    }
+    return uploadCategoryOptionsByCompany[selectedCompanyCode] || [];
+  };
+
+  const isCategoryAllowedForCompany = (selectedCompanyCode, selectedCategory) => {
+    if (!selectedCompanyCode || !selectedCategory) {
+      return false;
+    }
+    return getUploadCategoryOptionsByCompany(selectedCompanyCode).some((item) => item.value === selectedCategory);
   };
 
   useEffect(() => {
@@ -313,9 +377,13 @@ function FilePanel({ companyCode }) {
     setUploadModalOpen(true);
     setUploadRows([]);
     setBatchCompanyCode(companyCode || undefined);
-    setBatchFileCategory(category);
+    setBatchFileCategory(undefined);
+    setUploadCategoryOptionsByCompany({});
     loadCompanyOptions();
     loadUploadFileCategoryOptions();
+    if (companyCode) {
+      ensureCompanyUploadCategoryOptions(companyCode);
+    }
   };
 
   const addUploadFile = (file) => {
@@ -361,6 +429,13 @@ function FilePanel({ companyCode }) {
       message.warning("请为每个文件选择公司代码和文件类别");
       return;
     }
+    const companyCodeSet = Array.from(new Set(uploadRows.map((row) => row.companyCode).filter(Boolean)));
+    await Promise.all(companyCodeSet.map((code) => ensureCompanyUploadCategoryOptions(code)));
+    const mismatchRow = uploadRows.find((row) => !isCategoryAllowedForCompany(row.companyCode, row.fileCategory));
+    if (mismatchRow) {
+      message.warning("存在公司与文件类型不匹配的记录，请调整后再上传");
+      return;
+    }
     try {
       setUploadSubmitting(true);
       let successCount = 0;
@@ -398,7 +473,7 @@ function FilePanel({ companyCode }) {
     }
   };
 
-  const applyBatchSettings = () => {
+  const applyBatchSettings = async () => {
     if (!uploadRows.length) {
       message.warning("请先选择需要上传的文件");
       return;
@@ -407,11 +482,68 @@ function FilePanel({ companyCode }) {
       message.warning("请先选择要批量应用的公司代码或类型");
       return;
     }
-    setUploadRows((prev) => prev.map((row) => ({
-      ...row,
-      ...(batchCompanyCode ? { companyCode: batchCompanyCode } : {}),
-      ...(batchFileCategory ? { fileCategory: batchFileCategory } : {})
-    })));
+    const targetCodes = new Set(
+      uploadRows
+        .map((row) => (batchCompanyCode ? batchCompanyCode : row.companyCode))
+        .filter(Boolean)
+    );
+    await Promise.all(Array.from(targetCodes).map((code) => ensureCompanyUploadCategoryOptions(code)));
+
+    let skippedCount = 0;
+    setUploadRows((prev) =>
+      prev.map((row) => {
+        const nextCompanyCode = batchCompanyCode || row.companyCode;
+        let nextCategory = row.fileCategory;
+        if (batchFileCategory) {
+          const allowed = isCategoryAllowedForCompany(nextCompanyCode, batchFileCategory);
+          if (allowed) {
+            nextCategory = batchFileCategory;
+          } else {
+            skippedCount += 1;
+          }
+        }
+        return {
+          ...row,
+          ...(batchCompanyCode ? { companyCode: batchCompanyCode } : {}),
+          fileCategory: nextCategory
+        };
+      })
+    );
+    if (batchFileCategory && skippedCount > 0) {
+      message.warning(`批量应用完成，${skippedCount} 条因公司与类型不匹配未变更类型`);
+    }
+  };
+
+  const handleUploadRowCompanyChange = async (uid, selectedCompanyCode) => {
+    const options = await ensureCompanyUploadCategoryOptions(selectedCompanyCode);
+    const row = uploadRows.find((item) => item.uid === uid);
+    const currentCategory = row?.fileCategory;
+    const keepCategory = options.some((item) => item.value === currentCategory);
+    setUploadRows((prev) =>
+      prev.map((item) =>
+        item.uid === uid
+          ? {
+              ...item,
+              companyCode: selectedCompanyCode,
+              fileCategory: keepCategory ? item.fileCategory : undefined
+            }
+          : item
+      )
+    );
+    if (currentCategory && !keepCategory) {
+      message.warning("该公司不支持当前文件类型，已清空，请重新选择");
+    }
+  };
+
+  const handleBatchCompanyChange = async (selectedCompanyCode) => {
+    setBatchCompanyCode(selectedCompanyCode);
+    if (!selectedCompanyCode) {
+      return;
+    }
+    const options = await ensureCompanyUploadCategoryOptions(selectedCompanyCode);
+    if (!options.some((item) => item.value === batchFileCategory)) {
+      setBatchFileCategory(undefined);
+    }
   };
 
   const onOpenPullModal = () => {
@@ -472,6 +604,49 @@ function FilePanel({ companyCode }) {
       // 校验失败或接口异常提示已处理
     } finally {
       setPullSubmitting(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setPreviewLoading(false);
+    setPreviewError("");
+    setPreviewPayload(null);
+    setPreviewFileName("");
+  };
+
+  const parsePreviewPayload = (payload) => {
+    const normalized = normalizePayload(payload);
+    if (typeof normalized !== "string") {
+      return normalized;
+    }
+    const text = normalized.trim();
+    if (!text) {
+      return null;
+    }
+    if (text.startsWith("{") || text.startsWith("[")) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return normalized;
+      }
+    }
+    return normalized;
+  };
+
+  const openPreview = async (row) => {
+    setPreviewOpen(true);
+    setPreviewFileName(row?.fileName || "");
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreviewPayload(null);
+    try {
+      const { data } = await client.get(`/tax-ledger/files/${row.id}/parsed-result`);
+      setPreviewPayload(parsePreviewPayload(data));
+    } catch (e) {
+      setPreviewError(e?.response?.data?.msg || e?.message || "加载解析结果失败");
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -540,13 +715,13 @@ function FilePanel({ companyCode }) {
             options={companyOptions}
             filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
             onSearch={loadCompanyOptions}
-            onChange={setBatchCompanyCode}
+            onChange={handleBatchCompanyChange}
           />
           <Select
             value={batchFileCategory}
             placeholder="请选择类型"
             style={{ width: 240 }}
-            options={uploadFileCategoryOptions}
+            options={getUploadCategoryOptionsByCompany(batchCompanyCode)}
             onChange={setBatchFileCategory}
           />
           <Button
@@ -578,7 +753,7 @@ function FilePanel({ companyCode }) {
                   options={companyOptions}
                   filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
                   onSearch={loadCompanyOptions}
-                  onChange={(value) => updateUploadRow(row.uid, { companyCode: value })}
+                  onChange={(value) => handleUploadRowCompanyChange(row.uid, value)}
                 />
               )
             },
@@ -590,7 +765,12 @@ function FilePanel({ companyCode }) {
                   value={row.fileCategory}
                   placeholder="请选择类型"
                   style={{ width: "100%" }}
-                  options={uploadFileCategoryOptions}
+                  options={getUploadCategoryOptionsByCompany(row.companyCode)}
+                  onOpenChange={(open) => {
+                    if (open && row.companyCode) {
+                      ensureCompanyUploadCategoryOptions(row.companyCode);
+                    }
+                  }}
                   onChange={(value) => updateUploadRow(row.uid, { fileCategory: value })}
                 />
               )
@@ -729,6 +909,7 @@ function FilePanel({ companyCode }) {
             title: "操作",
             render: (_, row) => (
               <Space>
+                <Button onClick={() => openPreview(row)}>预览</Button>
                 <Button onClick={() => window.open(`/tax-ledger/files/${row.id}/download`, "_blank")}>下载</Button>
                 <Popconfirm
                   title="确认删除该文件？"
@@ -766,6 +947,54 @@ function FilePanel({ companyCode }) {
           position: ["bottomRight"]
         }}
       />
+      <Modal
+        title={`解析结果预览${previewFileName ? ` - ${previewFileName}` : ""}`}
+        open={previewOpen}
+        onCancel={closePreview}
+        footer={null}
+        width={1000}
+        destroyOnHidden
+      >
+        {previewLoading ? (
+          <div style={{ padding: "32px 0", textAlign: "center" }}>
+            <Spin />
+          </div>
+        ) : previewError ? (
+          <div style={{ color: "#ff4d4f", whiteSpace: "pre-wrap" }}>{previewError}</div>
+        ) : Array.isArray(previewPayload) ? (
+          previewPayload.length > 0 ? (
+            <Table
+              rowKey="__rowKey"
+              size="small"
+              dataSource={previewTableData}
+              columns={previewTableColumns}
+              pagination={{ pageSize: 20, showSizeChanger: false }}
+              scroll={{ x: "max-content" }}
+            />
+          ) : (
+            <Empty description="暂无解析结果" />
+          )
+        ) : previewPayload == null ? (
+          <Empty description="暂无解析结果" />
+        ) : (
+          <pre
+            style={{
+              margin: 0,
+              maxHeight: 560,
+              overflow: "auto",
+              background: "#fafafa",
+              border: "1px solid #f0f0f0",
+              borderRadius: 8,
+              padding: 12,
+              fontSize: 12
+            }}
+          >
+            {typeof previewPayload === "string"
+              ? previewPayload
+              : JSON.stringify(previewPayload, null, 2)}
+          </pre>
+        )}
+      </Modal>
     </Card>
   );
 }
