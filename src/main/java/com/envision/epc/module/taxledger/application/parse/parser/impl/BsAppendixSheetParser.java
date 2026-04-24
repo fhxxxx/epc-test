@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
+import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ public class BsAppendixSheetParser implements SheetParser<List<BsAppendixUploadD
 
         try {
             List<BsAppendixUploadDTO> rows = EasyExcelFactory.read(inputStream)
+                    .registerConverter(new SafeBigDecimalReadConverter())
                     .head(BsAppendixUploadDTO.class)
                     .sheet()
                     .doReadSync();

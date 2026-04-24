@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
+import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 
 import java.io.InputStream;
@@ -28,6 +29,7 @@ public abstract class AbstractDatalakeDetailSheetParser implements SheetParser<L
                 .build();
         try {
             List<DatalakeExportRowDTO> rows = EasyExcelFactory.read(inputStream)
+                    .registerConverter(new SafeBigDecimalReadConverter())
                     .head(DatalakeExportRowDTO.class)
                     .sheet()
                     .doReadSync();
@@ -39,4 +41,3 @@ public abstract class AbstractDatalakeDetailSheetParser implements SheetParser<L
         }
     }
 }
-

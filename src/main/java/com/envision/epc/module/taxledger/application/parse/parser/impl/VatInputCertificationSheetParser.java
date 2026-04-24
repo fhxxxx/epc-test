@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.VatInputCertificationItemDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
+import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
@@ -45,6 +46,7 @@ public class VatInputCertificationSheetParser implements SheetParser<List<VatInp
                 .build();
         try {
             List<VatInputCertificationItemDTO> rows = EasyExcelFactory.read(inputStream)
+                    .registerConverter(new SafeBigDecimalReadConverter())
                     .head(VatInputCertificationItemDTO.class)
                     .sheet()
                     .headRowNumber(3)

@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.StampDutySummaryRowDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
+import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRow
                 .build();
         try {
             List<StampDutySummaryRowDTO> rows = EasyExcelFactory.read(inputStream)
+                    .registerConverter(new SafeBigDecimalReadConverter())
                     .head(StampDutySummaryRowDTO.class)
                     .sheet()
                     .doReadSync();

@@ -1,26 +1,20 @@
 package com.envision.epc.module.taxledger.application.parse.parser;
 
+import com.envision.epc.module.taxledger.application.parse.BigDecimalNormalizeUtils;
+import lombok.extern.slf4j.Slf4j;
+
 import java.math.BigDecimal;
 
+@Slf4j
 public final class ParserValueUtils {
     private ParserValueUtils() {
     }
 
     public static BigDecimal toBigDecimal(String value) {
-        if (value == null) {
-            return null;
+        BigDecimal parsed = BigDecimalNormalizeUtils.parse(value);
+        if (parsed == null && BigDecimalNormalizeUtils.isInvalidNumericText(value)) {
+            log.warn("INVALID_NUMERIC_TEXT: value={}", value);
         }
-        String normalized = value.trim()
-                .replace(",", "")
-                .replace("，", "");
-        if (normalized.isBlank() || "-".equals(normalized)) {
-            return null;
-        }
-        try {
-            return new BigDecimal(normalized);
-        } catch (Exception ignore) {
-            return null;
-        }
+        return parsed;
     }
 }
-

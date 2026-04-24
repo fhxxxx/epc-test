@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcelFactory;
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
+import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ public class ContractStampDutyLedgerSheetParser implements SheetParser<List<Cont
                 .build();
         try {
             List<ContractStampDutyLedgerItemDTO> rows = EasyExcelFactory.read(inputStream)
+                    .registerConverter(new SafeBigDecimalReadConverter())
                     .head(ContractStampDutyLedgerItemDTO.class)
                     .sheet()
                     .doReadSync();

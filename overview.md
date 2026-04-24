@@ -256,7 +256,7 @@ VatSpecialItemConfig (N)
 |----|------|------|
 | BS | 资产负债表 | 用户上传 |
 | PL | 利润表 | 用户上传 |
-| BS_APPENDIX_TAX_PAYABLE | BS附表-应交税费科目余额表 | 用户上传 |
+| BS_APPENDIX_TAX_PAYABLE | BS附表 | 用户上传 |
 | PL_APPENDIX_2320 | PL附表(2320/2355公司) | 用户上传 |
 | PL_APPENDIX_PROJECT | PL附表(项目公司) | 用户上传 |
 | STAMP_TAX | 印花税明细 | 用户上传 |

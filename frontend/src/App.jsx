@@ -35,7 +35,7 @@ const { Text } = Typography;
 const DEFAULT_UPLOAD_FILE_CATEGORIES = [
   { value: "BS", label: "资产负债表（BS）" },
   { value: "PL", label: "利润表（PL）" },
-  { value: "BS_APPENDIX_TAX_PAYABLE", label: "BS附表-应交税费科目余额表" },
+  { value: "BS_APPENDIX_TAX_PAYABLE", label: "BS附表" },
   { value: "PL_APPENDIX_PROJECT", label: "PL附表（项目公司）" },
   { value: "STAMP_TAX", label: "印花税明细-2320、2355" },
   { value: "VAT_OUTPUT", label: "增值税销项" },
@@ -264,6 +264,19 @@ function FilePanel({ companyCode }) {
         }
       }));
   }, [previewTableData]);
+  const previewCopyText = useMemo(() => {
+    if (previewPayload == null) {
+      return "";
+    }
+    if (typeof previewPayload === "string") {
+      return previewPayload;
+    }
+    try {
+      return JSON.stringify(previewPayload, null, 2);
+    } catch {
+      return String(previewPayload);
+    }
+  }, [previewPayload]);
 
   const periodOptions = useMemo(
     () => Array.from({ length: 16 }, (_, i) => {
@@ -650,6 +663,30 @@ function FilePanel({ companyCode }) {
     }
   };
 
+  const copyPreviewResult = async () => {
+    if (!previewCopyText) {
+      message.warning("暂无可复制的解析结果");
+      return;
+    }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(previewCopyText);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = previewCopyText;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      message.success("解析结果已复制");
+    } catch {
+      message.error("复制失败，请重试");
+    }
+  };
+
   return (
     <Card
       title="文件管理"
@@ -955,6 +992,11 @@ function FilePanel({ companyCode }) {
         width={1000}
         destroyOnHidden
       >
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <Button size="small" onClick={copyPreviewResult} disabled={previewLoading || !previewCopyText}>
+            复制结果
+          </Button>
+        </div>
         {previewLoading ? (
           <div style={{ padding: "32px 0", textAlign: "center" }}>
             <Spin />
