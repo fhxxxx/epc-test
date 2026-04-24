@@ -7,6 +7,7 @@ import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerJobCommand;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerRunCommand;
+import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerJobListDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
 import com.envision.epc.module.taxledger.domain.LedgerArtifactTypeEnum;
@@ -43,7 +44,7 @@ public class LedgerJobService {
     private final LedgerJobMapper ledgerJobMapper;
     private final LedgerRunMapper ledgerRunMapper;
     private final LedgerRunArtifactMapper artifactMapper;
-    private final LedgerValidationService validationService;
+    private final LedgerPrecheckService precheckService;
     private final TaxLedgerService ledgerService;
     private final PermissionService permissionService;
     private final BlobStorageRemote blobStorageRemote;
@@ -182,9 +183,11 @@ public class LedgerJobService {
             job.setErrorMsg(null);
             ledgerJobMapper.updateById(job);
 
-            List<String> validationErrors = validationService.validate(job.getCompanyCode(), job.getYearMonth());
-            if (!validationErrors.isEmpty()) {
-                fail(job, LedgerJobStatusEnum.VALIDATION_FAILED, String.join("; ", validationErrors));
+            PrecheckSnapshotDTO snapshot;
+            try {
+                snapshot = precheckService.precheck(job.getCompanyCode(), job.getYearMonth());
+            } catch (BizException ex) {
+                fail(job, LedgerJobStatusEnum.VALIDATION_FAILED, ex.getMessage());
                 return;
             }
 
@@ -194,7 +197,7 @@ public class LedgerJobService {
             CreateLedgerRunCommand runCommand = new CreateLedgerRunCommand();
             runCommand.setCompanyCode(job.getCompanyCode());
             runCommand.setYearMonth(job.getYearMonth());
-            LedgerRunDetailDTO detail = ledgerService.createRun(runCommand);
+            LedgerRunDetailDTO detail = ledgerService.createRun(runCommand, snapshot);
             job.setRunId(detail.getRunId());
             ledgerJobMapper.updateById(job);
 

@@ -4,12 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
-import com.envision.epc.module.taxledger.application.command.ConfirmStageCommand;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerRunCommand;
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
 import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
 import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
+import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.PlStatementRowDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
 import com.envision.epc.module.taxledger.application.dto.StampDutyDetailRowDTO;
@@ -41,7 +41,6 @@ import com.envision.epc.module.taxledger.infrastructure.LedgerRunStageMapper;
 import com.envision.epc.module.taxledger.infrastructure.LedgerRunTaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.core.io.ClassPathResource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.TaskExecutor;
@@ -49,8 +48,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.util.StreamUtils;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -86,18 +83,16 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class TaxLedgerService {
     private static final String SCHEMA_VERSION = "v1";
-    private static final String N30_TEMPLATE_PATH = "templates/tax-ledger/pl-appendix-2320-2355-template.xlsx";
     private static final Pattern TAX_RATE_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*[%％]");
+    private static final String N30_FILE_LABEL = "PL附表-2320、2355";
 
     private static final List<NodeSpec> DAG = List.of(
             new NodeSpec("N00", 1, "", ManualActionTypeEnum.NONE, "configs,previous-ledger"),
-            new NodeSpec("N10", 2, "N00", ManualActionTypeEnum.NONE, "uploads,datalake"),
-            new NodeSpec("N20", 3, "N10", ManualActionTypeEnum.NONE, "stamp-duty,uninvoiced-monitor"),
-            new NodeSpec("N30", 4, "N10", ManualActionTypeEnum.FILL_SPLIT_BASIS_PL_2320_2355, "pl-appendix-2320-2355"),
-            new NodeSpec("N40", 5, "N20,N30", ManualActionTypeEnum.FILL_PREVIOUS_MONTH_INVOICED_AMOUNT, "vat-change"),
-            new NodeSpec("N50", 6, "N40", ManualActionTypeEnum.NONE, "summary"),
-            new NodeSpec("N60", 7, "N50", ManualActionTypeEnum.NONE, "cumulative-and-monitor"),
-            new NodeSpec("N70", 8, "N60", ManualActionTypeEnum.FILL_DIFFERENCE_ANALYSIS_AND_REASON, "final-manual-check")
+            new NodeSpec("N20", 2, "N00", ManualActionTypeEnum.NONE, "stamp-duty,uninvoiced-monitor"),
+            new NodeSpec("N40", 3, "N20", ManualActionTypeEnum.NONE, "vat-change"),
+            new NodeSpec("N50", 4, "N40", ManualActionTypeEnum.NONE, "summary"),
+            new NodeSpec("N60", 5, "N50", ManualActionTypeEnum.NONE, "cumulative-and-monitor"),
+            new NodeSpec("N70", 6, "N60", ManualActionTypeEnum.NONE, "final-manual-check")
     );
 
     private final LedgerRecordMapper ledgerRecordMapper;
@@ -108,7 +103,6 @@ public class TaxLedgerService {
     private final FileRecordMapper fileRecordMapper;
     private final BlobStorageRemote blobStorageRemote;
     private final FileParseOrchestratorService fileParseOrchestratorService;
-    private final FileService fileService;
     private final ParsedResultReader parsedResultReader;
     private final SummarySheetDataAssembler summarySheetDataAssembler;
     private final TaxLedgerExcelService excelService;
@@ -121,6 +115,11 @@ public class TaxLedgerService {
      */
     @Transactional(rollbackFor = Exception.class)
     public LedgerRunDetailDTO createRun(CreateLedgerRunCommand command) {
+        return createRun(command, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public LedgerRunDetailDTO createRun(CreateLedgerRunCommand command, PrecheckSnapshotDTO precheckSnapshot) {
         permissionService.checkCompanyAccess(command.getCompanyCode());
 
         LedgerRecord ledger = getOrCreateLedgerRecord(command.getCompanyCode(), command.getYearMonth());
@@ -130,7 +129,7 @@ public class TaxLedgerService {
         run.setLedgerId(ledger.getId());
         run.setRunNo(nextRunNo(ledger.getId()));
         run.setTriggerType(LedgerRunTriggerEnum.MANUAL);
-        run.setModeSnapshot(command.getMode() == null ? LedgerRunModeEnum.AUTO : command.getMode());
+        run.setModeSnapshot(LedgerRunModeEnum.AUTO);
         run.setStatus(LedgerRunStatusEnum.RUNNING);
         run.setCurrentBatch(1);
         run.setInputFingerprint(UUID.randomUUID().toString().replace("-", ""));
@@ -141,6 +140,10 @@ public class TaxLedgerService {
         ledger.setGenerateStatus(LedgerGenerateStatusEnum.PENDING);
         ledger.setStatusMsg("Run started");
         ledgerRecordMapper.updateById(ledger);
+
+        if (precheckSnapshot != null) {
+            persistPrecheckSnapshot(ledger, run, precheckSnapshot);
+        }
 
         createStages(run.getId());
         createTasks(run.getId());
@@ -181,55 +184,6 @@ public class TaxLedgerService {
         return LedgerRunDetailDTO.of(run, stages, artifacts, tasks, blocking, nextRunnable);
     }
 
-    /**
-     * GATED 模式人工确认后继续运行
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public LedgerRunDetailDTO confirm(Long runId, ConfirmStageCommand command) {
-        LedgerRun run = ledgerRunMapper.selectById(runId);
-        if (run == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Run not found");
-        }
-        if (run.getStatus() != LedgerRunStatusEnum.PAUSED) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Run is not paused");
-        }
-
-        LedgerRunTask blockedTask = taskMapper.selectOne(new LambdaQueryWrapper<LedgerRunTask>()
-                .eq(LedgerRunTask::getIsDeleted, 0)
-                .eq(LedgerRunTask::getRunId, runId)
-                .eq(LedgerRunTask::getStatus, RunTaskStatusEnum.BLOCKED_MANUAL)
-                .orderByAsc(LedgerRunTask::getBatchNo)
-                .last("LIMIT 1"));
-
-        if (blockedTask == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "No blocked manual task found");
-        }
-        if (command.getBatchNo() != null && !Objects.equals(command.getBatchNo(), blockedTask.getBatchNo())) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "batchNo does not match blocked task");
-        }
-
-        LedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
-        validateManualAction(ledger, blockedTask);
-
-        blockedTask.setStatus(RunTaskStatusEnum.SUCCESS);
-        blockedTask.setErrorMsg(null);
-        blockedTask.setEndedAt(LocalDateTime.now());
-        taskMapper.updateById(blockedTask);
-        markStageConfirmed(runId, blockedTask.getBatchNo());
-
-        writeNodeOutput(ledger, run, blockedTask, Map.of(
-                "confirmedBy", permissionService.currentUserCode(),
-                "action", blockedTask.getManualActionType().name(),
-                "confirmedAt", LocalDateTime.now().toString()
-        ));
-
-        run.setStatus(LedgerRunStatusEnum.RUNNING);
-        run.setCurrentBatch(blockedTask.getBatchNo());
-        ledgerRunMapper.updateById(run);
-
-        dispatchRun(runId);
-        return getRunDetail(runId);
-    }
 
     /**
      * 查询运行历史
@@ -270,82 +224,6 @@ public class TaxLedgerService {
         blobStorageRemote.loadStream(ledger.getBlobPath(), response.getOutputStream());
     }
 
-    public void downloadN30Template(Long runId, HttpServletResponse response) throws IOException {
-        LedgerRun run = ledgerRunMapper.selectById(runId);
-        if (run == null || run.getIsDeleted() == 1) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Run not found");
-        }
-        LedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
-        permissionService.checkCompanyAccess(ledger.getCompanyCode());
-
-        ClassPathResource resource = new ClassPathResource(N30_TEMPLATE_PATH);
-        if (!resource.exists()) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "N30 template not found");
-        }
-        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setCharacterEncoding("UTF-8");
-        String fileName = URLEncoder.encode("PL附表-2320、2355-模板.xlsx", StandardCharsets.UTF_8).replace("+", "%20");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
-        try (InputStream inputStream = resource.getInputStream()) {
-            StreamUtils.copy(inputStream, response.getOutputStream());
-        }
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public LedgerRunDetailDTO uploadN30File(Long runId, MultipartFile file) throws IOException {
-        LedgerRun run = ledgerRunMapper.selectById(runId);
-        if (run == null || run.getIsDeleted() == 1) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Run not found");
-        }
-        LedgerRecord ledger = ledgerRecordMapper.selectById(run.getLedgerId());
-        permissionService.checkCompanyAccess(ledger.getCompanyCode());
-
-        LedgerRunTask blockedTask = taskMapper.selectOne(new LambdaQueryWrapper<LedgerRunTask>()
-                .eq(LedgerRunTask::getIsDeleted, 0)
-                .eq(LedgerRunTask::getRunId, runId)
-                .eq(LedgerRunTask::getNodeCode, "N30")
-                .eq(LedgerRunTask::getStatus, RunTaskStatusEnum.BLOCKED_MANUAL)
-                .orderByDesc(LedgerRunTask::getId)
-                .last("LIMIT 1"));
-        if (blockedTask == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "N30 is not blocked");
-        }
-        if (!isCompany2320Or2355(ledger.getCompanyCode())) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "N30 upload is only for company 2320/2355");
-        }
-
-        FileRecord record = fileService.upload(ledger.getCompanyCode(), ledger.getYearMonth(), FileCategoryEnum.PL_APPENDIX_2320, file);
-        try {
-            fileParseOrchestratorService.parseNow(record, permissionService.currentUserCode());
-        } catch (Exception ex) {
-            blockedTask.setErrorMsg("N30 upload parse failed: " + ex.getMessage());
-            taskMapper.updateById(blockedTask);
-            throw ex;
-        }
-        Map<String, Object> output;
-        try {
-            output = executeN30(run, ledger);
-        } catch (Exception ex) {
-            blockedTask.setErrorMsg(ex.getMessage());
-            taskMapper.updateById(blockedTask);
-            markStageBlocked(run.getId(), blockedTask.getBatchNo(), ex.getMessage());
-            throw ex;
-        }
-        writeNodeOutput(ledger, run, blockedTask, output);
-
-        blockedTask.setStatus(RunTaskStatusEnum.SUCCESS);
-        blockedTask.setErrorMsg(null);
-        blockedTask.setEndedAt(LocalDateTime.now());
-        taskMapper.updateById(blockedTask);
-        markStageSuccess(run.getId(), blockedTask.getBatchNo());
-
-        run.setStatus(LedgerRunStatusEnum.RUNNING);
-        run.setCurrentBatch(blockedTask.getBatchNo());
-        ledgerRunMapper.updateById(run);
-        dispatchRun(runId);
-        return getRunDetail(runId);
-    }
-
     private void dispatchRun(Long runId) {
         taskExecutor.execute(() -> processRun(runId));
     }
@@ -379,17 +257,6 @@ public class TaxLedgerService {
                     return;
                 }
 
-                LedgerRunTask blocked = tasks.stream()
-                        .filter(t -> t.getStatus() == RunTaskStatusEnum.BLOCKED_MANUAL)
-                        .findFirst()
-                        .orElse(null);
-                if (blocked != null) {
-                    run.setStatus(LedgerRunStatusEnum.PAUSED);
-                    run.setCurrentBatch(blocked.getBatchNo());
-                    ledgerRunMapper.updateById(run);
-                    return;
-                }
-
                 List<LedgerRunTask> runnable = tasks.stream()
                         .filter(t -> t.getStatus() == RunTaskStatusEnum.PENDING)
                         .filter(t -> dependenciesSatisfied(t, tasks))
@@ -419,22 +286,6 @@ public class TaxLedgerService {
         markStageRunning(run.getId(), task.getBatchNo());
 
         try {
-            if ("N30".equals(task.getNodeCode())) {
-                return executeN30Task(run, ledger, task);
-            }
-            if (shouldBlockForManual(run, task)) {
-                task.setStatus(RunTaskStatusEnum.BLOCKED_MANUAL);
-                task.setEndedAt(LocalDateTime.now());
-                task.setErrorMsg("Waiting for manual action: " + task.getManualActionType().name());
-                taskMapper.updateById(task);
-
-                markStageBlocked(run.getId(), task.getBatchNo(), task.getErrorMsg());
-                run.setStatus(LedgerRunStatusEnum.PAUSED);
-                run.setCurrentBatch(task.getBatchNo());
-                ledgerRunMapper.updateById(run);
-                return false;
-            }
-
             Map<String, Object> output = executeNode(run, ledger, task);
 
             writeNodeOutput(ledger, run, task, output);
@@ -458,55 +309,9 @@ public class TaxLedgerService {
         }
     }
 
-    private boolean executeN30Task(LedgerRun run, LedgerRecord ledger, LedgerRunTask task) {
-        if (!isCompany2320Or2355(ledger.getCompanyCode())) {
-            Map<String, Object> output = new LinkedHashMap<>();
-            output.put("skipped", true);
-            output.put("reason", "company is not 2320/2355");
-            output.put("nodeCode", task.getNodeCode());
-            output.put("timestamp", LocalDateTime.now().toString());
-            writeNodeOutput(ledger, run, task, output);
-
-            task.setStatus(RunTaskStatusEnum.SKIPPED);
-            task.setErrorMsg(null);
-            task.setEndedAt(LocalDateTime.now());
-            taskMapper.updateById(task);
-            markStageSuccess(run.getId(), task.getBatchNo());
-            run.setCurrentBatch(task.getBatchNo());
-            ledgerRunMapper.updateById(run);
-            return true;
-        }
-
-        try {
-            Map<String, Object> output = executeN30(run, ledger);
-            writeNodeOutput(ledger, run, task, output);
-
-            task.setStatus(RunTaskStatusEnum.SUCCESS);
-            task.setErrorMsg(null);
-            task.setEndedAt(LocalDateTime.now());
-            taskMapper.updateById(task);
-            markStageSuccess(run.getId(), task.getBatchNo());
-            run.setCurrentBatch(task.getBatchNo());
-            ledgerRunMapper.updateById(run);
-            return true;
-        } catch (Exception ex) {
-            task.setStatus(RunTaskStatusEnum.BLOCKED_MANUAL);
-            task.setEndedAt(LocalDateTime.now());
-            task.setErrorMsg(ex.getMessage());
-            taskMapper.updateById(task);
-            markStageBlocked(run.getId(), task.getBatchNo(), task.getErrorMsg());
-            run.setStatus(LedgerRunStatusEnum.PAUSED);
-            run.setCurrentBatch(task.getBatchNo());
-            ledgerRunMapper.updateById(run);
-            return false;
-        }
-    }
-
     private Map<String, Object> executeNode(LedgerRun run, LedgerRecord ledger, LedgerRunTask task) {
         return switch (task.getNodeCode()) {
-            case "N10" -> executeN10(ledger);
             case "N20" -> executeN20(run, ledger);
-            case "N30" -> executeN30(run, ledger);
             default -> defaultNodeOutput(task);
         };
     }
@@ -528,11 +333,11 @@ public class TaxLedgerService {
 
         List<String> missingCategories = required.stream()
                 .filter(category -> !latestByCategory.containsKey(category))
-                .map(Enum::name)
+                .map(this::categoryDisplayName)
                 .sorted()
                 .toList();
         if (!missingCategories.isEmpty()) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "N10 missing required categories: " + String.join(",", missingCategories));
+            throw new BizException(ErrorCode.BAD_REQUEST, "N10缺少必需文件: " + String.join("、", missingCategories));
         }
 
         for (FileCategoryEnum category : required) {
@@ -568,21 +373,21 @@ public class TaxLedgerService {
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("companyCode", ledger.getCompanyCode());
         output.put("yearMonth", ledger.getYearMonth());
-        output.put("requiredCategories", required.stream().map(Enum::name).sorted().toList());
+        output.put("requiredCategories", required.stream().map(this::categoryDisplayName).sorted().toList());
         output.put("inputs", inputs);
         output.put("summary", summary);
         return output;
     }
 
     private Map<String, Object> executeN20(LedgerRun run, LedgerRecord ledger) {
-        N10Snapshot n10 = loadN10Snapshot(run.getId());
+        PrecheckSnapshotDTO snapshot = loadPrecheckSnapshot(run.getId());
 
-        List<PlStatementRowDTO> plRows = readRequiredParsedList(n10, FileCategoryEnum.PL, PlStatementRowDTO.class);
-        List<DatalakeExportRowDTO> dlOtherRows = readRequiredParsedList(n10, FileCategoryEnum.DL_OTHER, DatalakeExportRowDTO.class);
-        List<DatalakeExportRowDTO> dlOutputRows = readRequiredParsedList(n10, FileCategoryEnum.DL_OUTPUT, DatalakeExportRowDTO.class);
-        VatOutputSheetUploadDTO vatOutput = readRequiredParsedObject(n10, FileCategoryEnum.VAT_OUTPUT, VatOutputSheetUploadDTO.class);
+        List<PlStatementRowDTO> plRows = readRequiredParsedList(snapshot, FileCategoryEnum.PL, PlStatementRowDTO.class);
+        List<DatalakeExportRowDTO> dlOtherRows = readRequiredParsedList(snapshot, FileCategoryEnum.DL_OTHER, DatalakeExportRowDTO.class);
+        List<DatalakeExportRowDTO> dlOutputRows = readRequiredParsedList(snapshot, FileCategoryEnum.DL_OUTPUT, DatalakeExportRowDTO.class);
+        VatOutputSheetUploadDTO vatOutput = readRequiredParsedObject(snapshot, FileCategoryEnum.VAT_OUTPUT, VatOutputSheetUploadDTO.class);
 
-        Map<String, Object> stampDutyBlock = buildStampDutyPrecompute(ledger.getCompanyCode(), ledger.getYearMonth(), n10);
+        Map<String, Object> stampDutyBlock = buildStampDutyPrecompute(ledger.getCompanyCode(), ledger.getYearMonth(), snapshot);
         Map<String, Object> uninvoicedBlock = buildUninvoicedPrecompute(run, ledger, plRows, dlOtherRows, dlOutputRows, vatOutput);
 
         Map<String, Object> output = new LinkedHashMap<>();
@@ -610,9 +415,9 @@ public class TaxLedgerService {
             throw new BizException(ErrorCode.BAD_REQUEST, "PL附表解析结果为空");
         }
 
-        N10Snapshot n10 = loadN10Snapshot(run.getId());
-        List<MonthlyTaxSectionDTO> monthlyRows = readRequiredParsedList(n10, FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlyTaxSectionDTO.class);
-        N30ValidationResult validated = validateAndAssembleN30(uploaded, monthlyRows);
+        PrecheckSnapshotDTO snapshot = loadPrecheckSnapshot(run.getId());
+        List<MonthlyTaxSectionDTO> monthlyRows = readRequiredParsedList(snapshot, FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlyTaxSectionDTO.class);
+        N30ValidationResult validated = validateAndNormalizeN30(uploaded, monthlyRows);
 
         Map<String, Object> sourceFile = new LinkedHashMap<>();
         sourceFile.put("fileId", parsedFile.getId());
@@ -681,7 +486,7 @@ public class TaxLedgerService {
                 || refreshed.getParseResultBlobPath() == null
                 || refreshed.getParseResultBlobPath().isBlank()) {
             throw new BizException(ErrorCode.BAD_REQUEST,
-                    "required file parse failed: " + refreshed.getFileCategory().name());
+                    "必需文件解析失败: " + categoryDisplayName(refreshed.getFileCategory()));
         }
         return refreshed;
     }
@@ -697,46 +502,68 @@ public class TaxLedgerService {
         return item;
     }
 
-    private N10Snapshot loadN10Snapshot(Long runId) {
-        LedgerRunTask n10Task = taskMapper.selectOne(new LambdaQueryWrapper<LedgerRunTask>()
-                .eq(LedgerRunTask::getRunId, runId)
-                .eq(LedgerRunTask::getNodeCode, "N10")
-                .eq(LedgerRunTask::getIsDeleted, 0)
-                .orderByDesc(LedgerRunTask::getId)
+    private PrecheckSnapshotDTO loadPrecheckSnapshot(Long runId) {
+        LedgerRunArtifact artifact = artifactMapper.selectOne(new LambdaQueryWrapper<LedgerRunArtifact>()
+                .eq(LedgerRunArtifact::getRunId, runId)
+                .eq(LedgerRunArtifact::getArtifactType, LedgerArtifactTypeEnum.PRECHECK_SNAPSHOT)
+                .eq(LedgerRunArtifact::getIsDeleted, 0)
+                .orderByDesc(LedgerRunArtifact::getId)
                 .last("LIMIT 1"));
-        if (n10Task == null || n10Task.getOutputBlobPath() == null || n10Task.getOutputBlobPath().isBlank()) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "N10 output not found");
+        if (artifact == null || artifact.getBlobPath() == null || artifact.getBlobPath().isBlank()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "PRECHECK_SNAPSHOT not found");
         }
-        N10Snapshot snapshot = parsedResultReader.readNodeOutputData(n10Task.getOutputBlobPath(), N10Snapshot.class);
+        PrecheckSnapshotDTO snapshot = parsedResultReader.readNodeOutputData(artifact.getBlobPath(), PrecheckSnapshotDTO.class);
         if (snapshot == null || snapshot.getInputs() == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "N10 output is invalid");
+            throw new BizException(ErrorCode.BAD_REQUEST, "PRECHECK_SNAPSHOT is invalid");
         }
         return snapshot;
     }
 
-    private <T> List<T> readRequiredParsedList(N10Snapshot snapshot, FileCategoryEnum category, Class<T> itemType) {
-        N10InputItem item = snapshot.findByCategory(category);
+    private <T> List<T> readRequiredParsedList(PrecheckSnapshotDTO snapshot, FileCategoryEnum category, Class<T> itemType) {
+        PrecheckSnapshotDTO.InputItem item = findInputByCategory(snapshot, category);
         if (item == null || item.getParseResultBlobPath() == null || item.getParseResultBlobPath().isBlank()) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Missing parsed input: " + category.name());
+            throw new BizException(ErrorCode.BAD_REQUEST, "缺少已解析输入: " + categoryDisplayName(category));
         }
         return parsedResultReader.readParsedList(item.getParseResultBlobPath(), itemType);
     }
 
-    private <T> T readRequiredParsedObject(N10Snapshot snapshot, FileCategoryEnum category, Class<T> type) {
-        N10InputItem item = snapshot.findByCategory(category);
+    private <T> T readRequiredParsedObject(PrecheckSnapshotDTO snapshot, FileCategoryEnum category, Class<T> type) {
+        PrecheckSnapshotDTO.InputItem item = findInputByCategory(snapshot, category);
         if (item == null || item.getParseResultBlobPath() == null || item.getParseResultBlobPath().isBlank()) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "Missing parsed input: " + category.name());
+            throw new BizException(ErrorCode.BAD_REQUEST, "缺少已解析输入: " + categoryDisplayName(category));
         }
         return parsedResultReader.readParsedData(item.getParseResultBlobPath(), type);
     }
 
-    private N30ValidationResult validateAndAssembleN30(PlAppendix23202355DTO uploaded, List<MonthlyTaxSectionDTO> monthlyRows) {
+    private PrecheckSnapshotDTO.InputItem findInputByCategory(PrecheckSnapshotDTO snapshot, FileCategoryEnum category) {
+        if (snapshot == null || snapshot.getInputs() == null || category == null) {
+            return null;
+        }
+        return snapshot.getInputs().stream()
+                .filter(Objects::nonNull)
+                .filter(item -> category.name().equals(item.getFileCategory()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String categoryDisplayName(FileCategoryEnum category) {
+        if (category == null) {
+            return "";
+        }
+        if (category.getDisplayName() == null || category.getDisplayName().isBlank()) {
+            return category.name();
+        }
+        return category.getDisplayName();
+    }
+
+    public N30ValidationResult validateAndNormalizeN30(PlAppendix23202355DTO uploaded, List<MonthlyTaxSectionDTO> monthlyRows) {
         List<PlAppendix23202355DTO.InvoicingSplitItem> section1 =
                 uploaded.getInvoicingSplitList() == null ? new ArrayList<>() : new ArrayList<>(uploaded.getInvoicingSplitList());
         List<PlAppendix23202355DTO.DeclarationSplitItem> section2 =
                 uploaded.getDeclarationSplitList() == null ? new ArrayList<>() : new ArrayList<>(uploaded.getDeclarationSplitList());
 
         removeBlankNormalRows(section1, section2);
+        removeTotalRows(section1, section2);
         removeBlankPupiaoRows(section1, section2);
 
         Map<String, PlAppendix23202355DTO.InvoicingSplitItem> sec1Map = new LinkedHashMap<>();
@@ -744,13 +571,13 @@ public class TaxLedgerService {
         for (PlAppendix23202355DTO.InvoicingSplitItem row : section1) {
             String key = splitBasisKey(row.getSplitBasis(), "section1");
             if (sec1Map.putIfAbsent(key, row) != null) {
-                throw new BizException(ErrorCode.BAD_REQUEST, "Section1拆分依据重复: " + row.getSplitBasis());
+                throw new BizException(ErrorCode.BAD_REQUEST, N30_FILE_LABEL + "：Section1拆分依据重复: " + row.getSplitBasis());
             }
         }
         for (PlAppendix23202355DTO.DeclarationSplitItem row : section2) {
             String key = splitBasisKey(row.getSplitBasis(), "section2");
             if (sec2Map.putIfAbsent(key, row) != null) {
-                throw new BizException(ErrorCode.BAD_REQUEST, "Section2拆分依据重复: " + row.getSplitBasis());
+                throw new BizException(ErrorCode.BAD_REQUEST, N30_FILE_LABEL + "：Section2拆分依据重复: " + row.getSplitBasis());
             }
         }
 
@@ -759,7 +586,7 @@ public class TaxLedgerService {
             only1.removeAll(sec2Map.keySet());
             Set<String> only2 = new HashSet<>(sec2Map.keySet());
             only2.removeAll(sec1Map.keySet());
-            throw new BizException(ErrorCode.BAD_REQUEST, "上下Section拆分依据不一致, section1Only="
+            throw new BizException(ErrorCode.BAD_REQUEST, N30_FILE_LABEL + "：上下Section拆分依据不一致, section1Only="
                     + String.join(",", only1) + ", section2Only=" + String.join(",", only2));
         }
 
@@ -802,6 +629,12 @@ public class TaxLedgerService {
         section2.removeIf(row -> normalizeText(row.getSplitBasis()) == null);
     }
 
+    private void removeTotalRows(List<PlAppendix23202355DTO.InvoicingSplitItem> section1,
+                                 List<PlAppendix23202355DTO.DeclarationSplitItem> section2) {
+        section1.removeIf(row -> isTotalRow(row.getSplitBasis()));
+        section2.removeIf(row -> isTotalRow(row.getSplitBasis()));
+    }
+
     private void removeBlankPupiaoRows(List<PlAppendix23202355DTO.InvoicingSplitItem> section1,
                                        List<PlAppendix23202355DTO.DeclarationSplitItem> section2) {
         section1.removeIf(row -> isPupiao(row.getSplitBasis()) && allNull(
@@ -822,13 +655,18 @@ public class TaxLedgerService {
     private String splitBasisKey(String splitBasis, String sectionName) {
         String text = normalizeText(splitBasis);
         if (text == null || text.isBlank()) {
-            throw new BizException(ErrorCode.BAD_REQUEST, sectionName + "拆分依据不能为空");
+            throw new BizException(ErrorCode.BAD_REQUEST, N30_FILE_LABEL + "：" + sectionName + "拆分依据不能为空");
         }
         String rate = extractTaxRate(text);
         if (rate == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, sectionName + "拆分依据无法提取税率: " + text);
+            throw new BizException(ErrorCode.BAD_REQUEST, N30_FILE_LABEL + "：" + sectionName + "拆分依据无法提取税率: " + text);
         }
         return (isPupiao(text) ? "普票-" : "专票-") + rate;
+    }
+
+    private boolean isTotalRow(String splitBasis) {
+        String text = normalizeText(splitBasis);
+        return text != null && text.contains("合计");
     }
 
     private boolean isPupiao(String splitBasis) {
@@ -867,7 +705,7 @@ public class TaxLedgerService {
         return sum;
     }
 
-    private Map<String, Object> buildStampDutyPrecompute(String companyCode, String yearMonth, N10Snapshot n10) {
+    private Map<String, Object> buildStampDutyPrecompute(String companyCode, String yearMonth, PrecheckSnapshotDTO snapshot) {
         Map<String, Object> block = new LinkedHashMap<>();
         if (isCompany2320Or2355(companyCode)) {
             block.put("skipped", true);
@@ -877,7 +715,7 @@ public class TaxLedgerService {
         }
 
         List<ContractStampDutyLedgerItemDTO> contractRows =
-                readRequiredParsedList(n10, FileCategoryEnum.CONTRACT_STAMP_DUTY_LEDGER, ContractStampDutyLedgerItemDTO.class);
+                readRequiredParsedList(snapshot, FileCategoryEnum.CONTRACT_STAMP_DUTY_LEDGER, ContractStampDutyLedgerItemDTO.class);
         String quarter = resolveQuarter(yearMonth);
 
         Map<String, StampDutyAggregate> agg = new LinkedHashMap<>();
@@ -1217,7 +1055,8 @@ public class TaxLedgerService {
         String blobPath = String.format("tax-ledger/%s/%s/final/%s",
                 ledger.getCompanyCode(), ledger.getYearMonth(), ledger.getLedgerName());
         blobStorageRemote.upload(blobPath, new ByteArrayInputStream(finalLedger));
-        saveArtifact(run.getId(), 8, LedgerArtifactTypeEnum.FINAL_LEDGER, ledger.getLedgerName(), blobPath,
+        int finalBatchNo = DAG.stream().map(NodeSpec::batchNo).max(Integer::compareTo).orElse(1);
+        saveArtifact(run.getId(), finalBatchNo, LedgerArtifactTypeEnum.FINAL_LEDGER, ledger.getLedgerName(), blobPath,
                 (long) finalLedger.length, sha256(finalLedger));
 
         run.setStatus(LedgerRunStatusEnum.SUCCESS);
@@ -1303,6 +1142,25 @@ public class TaxLedgerService {
                     task.getNodeCode() + ".json", path, (long) bytes.length, sha256(bytes));
         } catch (Exception e) {
             throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR, "write node output failed: " + e.getMessage());
+        }
+    }
+
+    private void persistPrecheckSnapshot(LedgerRecord ledger, LedgerRun run, PrecheckSnapshotDTO snapshot) {
+        try {
+            Map<String, Object> envelope = new HashMap<>();
+            envelope.put("schemaVersion", SCHEMA_VERSION);
+            envelope.put("runId", run.getId());
+            envelope.put("outputData", snapshot);
+            envelope.put("generatedAt", LocalDateTime.now());
+
+            byte[] bytes = objectMapper.writeValueAsBytes(envelope);
+            String path = String.format("tax-ledger/%s/%s/runs/%d/precheck-snapshot.json",
+                    ledger.getCompanyCode(), ledger.getYearMonth(), run.getId());
+            blobStorageRemote.upload(path, new ByteArrayInputStream(bytes));
+            saveArtifact(run.getId(), 0, LedgerArtifactTypeEnum.PRECHECK_SNAPSHOT,
+                    "precheck-snapshot.json", path, (long) bytes.length, sha256(bytes));
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR, "write precheck snapshot failed: " + e.getMessage());
         }
     }
 
@@ -1779,7 +1637,7 @@ public class TaxLedgerService {
         INVOICED_TAX_AMOUNT
     }
 
-    private static class N30ValidationResult {
+    public static class N30ValidationResult {
         private final PlAppendix23202355DTO data;
         private final Map<String, Object> validationDetails;
 

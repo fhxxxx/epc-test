@@ -47,6 +47,7 @@ public class DataLakeService {
     private final BlobStorageRemote blobStorageRemote;
     private final PermissionService permissionService;
     private final FileService fileService;
+    private final FileParseOrchestratorService fileParseOrchestratorService;
     private final DatalakeExportAssembler datalakeExportAssembler;
     private final TaskExecutor taskExecutor;
 
@@ -98,9 +99,10 @@ public class DataLakeService {
 
             List<FileRecord> records = new ArrayList<>();
             for (Map.Entry<FileCategoryEnum, List<DatalakeDTO>> entry : grouped.entrySet()) {
+                List<DatalakeExportRowDTO> exportRows = datalakeExportAssembler.toExportRows(entry.getValue());
                 String timestamp = LocalDateTime.now().format(TS_FORMATTER);
                 String sheetName = toSheetName(entry.getKey());
-                byte[] bytes = toExcelBytes(entry.getValue(), sheetName);
+                byte[] bytes = toExcelBytes(exportRows, sheetName);
                 String blobPath = String.format(
                         "tax-ledger/%s/%s/%s/%s_%s.xlsx",
                         companyCode,
@@ -120,6 +122,21 @@ public class DataLakeService {
                         blobPath,
                         (long) bytes.length
                 );
+                String parseResultPath = fileParseOrchestratorService.persistParsedResult(
+                        record,
+                        exportRows,
+                        List.of(),
+                        "datalake-pull"
+                );
+                log.info("datalake parse persisted, companyCode={}, yearMonth={}, category={}, rawRows={}, exportRows={}, targetStatus={}",
+                        companyCode,
+                        command.getYearMonth(),
+                        categoryDisplayName(entry.getKey()),
+                        entry.getValue().size(),
+                        exportRows.size(),
+                        "SUCCESS");
+                log.info("datalake parse result path, fileId={}, category={}, parseResultBlobPath={}",
+                        record.getId(), categoryDisplayName(entry.getKey()), parseResultPath);
                 records.add(record);
             }
             return CompanyPullResult.success(records);
@@ -149,8 +166,7 @@ public class DataLakeService {
         );
     }
 
-    private byte[] toExcelBytes(List<DatalakeDTO> rows, String sheetName) {
-        List<DatalakeExportRowDTO> exportRows = datalakeExportAssembler.toExportRows(rows);
+    private byte[] toExcelBytes(List<DatalakeExportRowDTO> exportRows, String sheetName) {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             EasyExcelFactory.write(outputStream, DatalakeExportRowDTO.class)
                     .sheet(sheetName)
@@ -216,6 +232,16 @@ public class DataLakeService {
             case DL_OTHER -> "\u5176\u4ed6\u79d1\u76ee\u660e\u7ec6";
             default -> category.name();
         };
+    }
+
+    private static String categoryDisplayName(FileCategoryEnum category) {
+        if (category == null) {
+            return "";
+        }
+        if (CharSequenceUtil.isBlank(category.getDisplayName())) {
+            return category.name();
+        }
+        return category.getDisplayName();
     }
 
     @lombok.Value(staticConstructor = "of")

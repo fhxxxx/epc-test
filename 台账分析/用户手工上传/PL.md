@@ -89,3 +89,18 @@ public class PlStatementRowDTO {
   }
 ]
 ```
+
+---
+
+## 6. 当前解析实现口径（与代码同步）
+
+- 解析器：`PlSheetParser`。
+- 读取方式：按固定列位解析第一张 sheet，不依赖表头行定位。
+- 列映射：
+- A列 -> `itemName`
+- B列 -> `lineNo`
+- C列 -> `currentPeriodAmount`
+- D列 -> `accumulatedAmount`
+- 有效行判定：仅 `lineNo` 为纯数字的行会输出（标题行、说明行自动跳过）。
+- 输出规则：只输出实际存在的序号行，不补齐不存在的序号。
+- 数值规则：支持千分位、`-` 等格式，`-` 按 `0` 处理。

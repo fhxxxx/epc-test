@@ -1258,7 +1258,7 @@ function LedgerPanel({ companyCode }) {
             <Text>开始时间: {formatDateTime(jobDetail?.startedAt)}</Text>
             <Text>结束时间: {formatDateTime(jobDetail?.endedAt)}</Text>
             <Text type={jobDetail?.errorMsg ? "danger" : undefined}>
-              错误信息: {jobDetail?.errorMsg || "-"}
+              {jobDetail?.errorMsg || "-"}
             </Text>
           </Space>
         )}

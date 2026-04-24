@@ -27,6 +27,9 @@ import java.util.regex.Pattern;
  */
 @Component
 public class MonthlySettlementTaxSheetParser implements SheetParser<List<MonthlyTaxSectionDTO>> {
+    private static final int LEADING_COL_START = 0;
+    private static final int LEADING_COL_END = 2;
+
     private static final String HEADER_COST = "成本";
     private static final String HEADER_INCOME = "收入";
     private static final String HEADER_OUTPUT_TAX = "销项";
@@ -102,6 +105,9 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<List<Monthly
         boolean started = false;
         for (int rowIndex = dataStartRowIndex; rowIndex < rows.size(); rowIndex++) {
             Map<Integer, String> row = rows.get(rowIndex);
+            if (!hasLeadingColumnsData(row, LEADING_COL_START, LEADING_COL_END)) {
+                continue;
+            }
             String costRaw = normalize(row.get(startCol));
             String incomeRaw = normalize(row.get(startCol + 1));
             String outputTaxRaw = normalize(row.get(startCol + 2));
@@ -243,6 +249,22 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<List<Monthly
             }
         }
         return true;
+    }
+
+    /**
+     * 仅解析前几列（如A~C）存在数据的业务行。
+     * 当前规则：指定区间内任意一列有值即可视为有效前置数据。
+     */
+    private static boolean hasLeadingColumnsData(Map<Integer, String> row, int startCol, int endCol) {
+        if (row == null || row.isEmpty()) {
+            return false;
+        }
+        for (int col = startCol; col <= endCol; col++) {
+            if (StringUtils.hasText(normalize(row.get(col)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalize(String value) {

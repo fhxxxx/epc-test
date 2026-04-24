@@ -1,6 +1,5 @@
 package com.envision.epc.module.taxledger.application.command;
 
-import com.envision.epc.module.taxledger.domain.LedgerRunModeEnum;
 import lombok.Data;
 
 /**
@@ -16,8 +15,4 @@ public class CreateLedgerRunCommand {
      * 账期，格式：yyyy-MM
      */
     private String yearMonth;
-    /**
-     * 运行模式：AUTO / GATED
-     */
-    private LedgerRunModeEnum mode = LedgerRunModeEnum.AUTO;
 }

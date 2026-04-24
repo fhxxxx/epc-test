@@ -31,11 +31,11 @@ public class LedgerValidationService {
         for (FileCategoryEnum category : required) {
             FileRecord file = latestByCategory.get(category);
             if (file == null) {
-                errors.add("Missing file: " + category.name());
+                errors.add("缺少文件: " + categoryDisplayName(category));
                 continue;
             }
             if (file.getParseStatus() != FileParseStatusEnum.SUCCESS) {
-                errors.add("File parse not ready: " + category.name());
+                errors.add("文件解析未完成: " + categoryDisplayName(category));
             }
         }
         return errors;
@@ -87,5 +87,15 @@ public class LedgerValidationService {
 
     private boolean isCompany2320Or2355(String companyCode) {
         return "2320".equals(companyCode) || "2355".equals(companyCode);
+    }
+
+    private String categoryDisplayName(FileCategoryEnum category) {
+        if (category == null) {
+            return "";
+        }
+        if (category.getDisplayName() == null || category.getDisplayName().isBlank()) {
+            return category.name();
+        }
+        return category.getDisplayName();
     }
 }

@@ -23,7 +23,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -46,6 +48,63 @@ public class FileParseOrchestratorService {
             return;
         }
         taskExecutor.execute(() -> parseAsyncInternal(fileRecordId, operator));
+    }
+
+    public String persistParsedResult(FileRecord record, Object data, List<String> issues, String operator) {
+        if (record == null || record.getId() == null || record.getIsDeleted() == 1) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "File not found");
+        }
+
+        int claimed = fileRecordMapper.transitionParseStatus(
+                record.getId(),
+                FileParseStatusEnum.PARSING,
+                new FileParseStatusEnum[]{FileParseStatusEnum.PENDING, FileParseStatusEnum.FAILED}
+        );
+        if (claimed <= 0) {
+            FileRecord latest = getActiveById(record.getId());
+            if (latest != null
+                    && latest.getParseStatus() == FileParseStatusEnum.SUCCESS
+                    && StringUtils.hasText(latest.getParseResultBlobPath())) {
+                return latest.getParseResultBlobPath();
+            }
+            throw new BizException(ErrorCode.BAD_REQUEST, "parse status is not allowed to persist directly");
+        }
+
+        try {
+            List<String> safeIssues = issues == null ? new ArrayList<>() : new ArrayList<>(issues);
+            ParseResult<Object> parseResult = ParseResult.<Object>builder()
+                    .data(data)
+                    .issues(safeIssues)
+                    .build();
+            String traceId = UUID.randomUUID().toString().replace("-", "");
+            String payload = toJsonPayload(record, parseResult, traceId);
+            if (parseResult.hasError()) {
+                fileRecordMapper.markParseFailed(
+                        record.getId(),
+                        FileParseStatusEnum.FAILED,
+                        FileParseStatusEnum.PARSING,
+                        truncate(String.join("; ", safeIssues))
+                );
+                return null;
+            }
+            String path = uploadResultJson(record, payload);
+            fileRecordMapper.markParseSuccess(
+                    record.getId(),
+                    FileParseStatusEnum.SUCCESS,
+                    FileParseStatusEnum.PARSING,
+                    path,
+                    LocalDateTime.now()
+            );
+            return path;
+        } catch (Exception e) {
+            fileRecordMapper.markParseFailed(
+                    record.getId(),
+                    FileParseStatusEnum.FAILED,
+                    FileParseStatusEnum.PARSING,
+                    truncate(e.getMessage())
+            );
+            throw new BizException(ErrorCode.BAD_REQUEST, "persist parsed result failed: " + e.getMessage());
+        }
     }
 
     public String loadParsedResultOrParse(FileRecord record, String operator) {
@@ -257,4 +316,3 @@ public class FileParseOrchestratorService {
         }
     }
 }
-

@@ -17,7 +17,7 @@ public enum FileCategoryEnum {
     VAT_CHANGE_APPENDIX("增值税变动表附表", true, "增值税变动表附表", FileCategoryScopeEnum.ALL),
     CONTRACT_STAMP_DUTY_LEDGER("合同印花税明细台账", true, "合同印花税明细台账", FileCategoryScopeEnum.PROJECT),
     MONTHLY_SETTLEMENT_TAX("睿景景程月结数据表-报税", true, "睿景景程月结数据表-报税", FileCategoryScopeEnum.RJJC_2320_2355),
-    PREINVOICE_ACCRUAL_REVERSAL_2320_2355("预开票收入计提及冲回统计（2320、2355）", false, "预开票收入计提及冲回统计（2320、2355）", FileCategoryScopeEnum.RJJC_2320_2355),
+    PREINVOICE_ACCRUAL_REVERSAL_2320_2355("预开票收入计提及冲回统计（2320、2355）", true, "预开票收入计提及冲回统计（2320、2355）", FileCategoryScopeEnum.RJJC_2320_2355),
     PROJECT_CUMULATIVE_DECLARATION("项目累计申报", false, "项目累计申报", FileCategoryScopeEnum.ALL),
     PROJECT_CUMULATIVE_PAYMENT("项目累计缴纳", false, "项目累计缴纳", FileCategoryScopeEnum.ALL),
     SUMMARY("summary表", false, "Summary ", FileCategoryScopeEnum.ALL),
