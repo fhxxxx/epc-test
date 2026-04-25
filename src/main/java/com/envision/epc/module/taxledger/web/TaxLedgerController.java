@@ -3,10 +3,12 @@ package com.envision.epc.module.taxledger.web;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerJobCommand;
 import com.envision.epc.module.taxledger.application.dto.LedgerJobListDTO;
 import com.envision.epc.module.taxledger.application.service.LedgerJobService;
+import com.envision.epc.module.taxledger.domain.FileRecord;
 import com.envision.epc.module.taxledger.domain.LedgerJob;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
@@ -45,5 +47,17 @@ public class TaxLedgerController {
     @GetMapping("/jobs/{jobId}/download")
     public void download(@PathVariable Long jobId, HttpServletResponse response) throws IOException {
         ledgerJobService.download(jobId, response);
+    }
+
+    @PostMapping("/final-ledger/upload")
+    public FileRecord uploadFinalLedger(@RequestParam String companyCode,
+                                        @RequestParam String yearMonth,
+                                        @RequestPart MultipartFile file) throws IOException {
+        return ledgerJobService.uploadFinalLedger(companyCode, yearMonth, file);
+    }
+
+    @PostMapping("/jobs/{jobId}/publish-final-ledger")
+    public FileRecord publishFinalLedger(@PathVariable Long jobId) {
+        return ledgerJobService.publishFinalLedger(jobId);
     }
 }

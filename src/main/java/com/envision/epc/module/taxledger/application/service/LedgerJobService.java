@@ -16,6 +16,8 @@ import com.envision.epc.module.taxledger.domain.LedgerJobStatusEnum;
 import com.envision.epc.module.taxledger.domain.LedgerRun;
 import com.envision.epc.module.taxledger.domain.LedgerRunArtifact;
 import com.envision.epc.module.taxledger.domain.LedgerRunStatusEnum;
+import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
+import com.envision.epc.module.taxledger.domain.FileRecord;
 import com.envision.epc.module.taxledger.infrastructure.LedgerJobMapper;
 import com.envision.epc.module.taxledger.infrastructure.LedgerRunArtifactMapper;
 import com.envision.epc.module.taxledger.infrastructure.LedgerRunMapper;
@@ -28,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -46,6 +49,7 @@ public class LedgerJobService {
     private final LedgerRunArtifactMapper artifactMapper;
     private final LedgerPrecheckService precheckService;
     private final TaxLedgerService ledgerService;
+    private final FileService fileService;
     private final PermissionService permissionService;
     private final BlobStorageRemote blobStorageRemote;
     private final TaskExecutor taskExecutor;
@@ -132,6 +136,39 @@ public class LedgerJobService {
         String fileName = URLEncoder.encode(artifact.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
         blobStorageRemote.loadStream(artifact.getBlobPath(), response.getOutputStream());
+    }
+
+    public FileRecord uploadFinalLedger(String companyCode, String yearMonth, MultipartFile file) throws IOException {
+        return fileService.upload(companyCode, yearMonth, FileCategoryEnum.FINAL_LEDGER, file);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public FileRecord publishFinalLedger(Long jobId) {
+        LedgerJob job = getJob(jobId);
+        permissionService.checkCompanyAccess(job.getCompanyCode());
+        if (job.getStatus() != LedgerJobStatusEnum.SUCCESS || job.getRunId() == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "仅成功任务可设为最终台账");
+        }
+
+        LedgerRunArtifact artifact = artifactMapper.selectOne(new LambdaQueryWrapper<LedgerRunArtifact>()
+                .eq(LedgerRunArtifact::getIsDeleted, 0)
+                .eq(LedgerRunArtifact::getRunId, job.getRunId())
+                .eq(LedgerRunArtifact::getArtifactType, LedgerArtifactTypeEnum.FINAL_LEDGER)
+                .orderByDesc(LedgerRunArtifact::getId)
+                .last("LIMIT 1"));
+        if (artifact == null || !StringUtils.hasText(artifact.getBlobPath())) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "任务未找到最终台账产物");
+        }
+
+        Long fileSize = artifact.getFileSize() == null ? 0L : artifact.getFileSize();
+        return fileService.saveOrReplace(
+                job.getCompanyCode(),
+                job.getYearMonth(),
+                artifact.getFileName(),
+                FileCategoryEnum.FINAL_LEDGER,
+                artifact.getBlobPath(),
+                fileSize
+        );
     }
 
     private LedgerJob getJob(Long jobId) {

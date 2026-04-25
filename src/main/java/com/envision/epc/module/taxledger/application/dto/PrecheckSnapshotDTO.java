@@ -17,6 +17,7 @@ public class PrecheckSnapshotDTO {
     private List<InputItem> inputs;
     private PlAppendix23202355DTO n30NormalizedData;
     private Map<String, Object> validationDetails;
+    private PreviousLedgerValidation previousLedgerValidation;
     private String fingerprint;
     private LocalDateTime generatedAt;
 
@@ -29,5 +30,14 @@ public class PrecheckSnapshotDTO {
         private String parseResultBlobPath;
         private Long fileSize;
     }
-}
 
+    @Data
+    public static class PreviousLedgerValidation {
+        private String previousPeriodMonth;
+        private Long previousLedgerRunId;
+        private String previousLedgerArtifactPath;
+        private List<String> checkedSheets;
+        private List<String> issues;
+        private Map<String, Object> parsedSummary;
+    }
+}

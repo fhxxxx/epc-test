@@ -63,7 +63,7 @@ public class PlAppendix2320SheetParser implements SheetParser<PlAppendix23202355
                         }
                     })
                     .headRowNumber(0)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doRead();
         } catch (Exception e) {
             result.addIssue("PL附表-2320、2355：读取Excel失败 - " + e.getMessage());

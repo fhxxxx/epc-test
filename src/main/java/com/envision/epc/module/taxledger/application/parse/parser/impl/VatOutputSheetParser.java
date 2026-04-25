@@ -63,7 +63,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
                         }
                     })
                     .headRowNumber(0)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doRead();
         } catch (Exception e) {
             result.addIssue("增值税销项：读取Excel失败 - " + e.getMessage());

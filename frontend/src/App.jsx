@@ -215,6 +215,7 @@ function FilePanel({ companyCode }) {
   const [batchFileCategory, setBatchFileCategory] = useState();
   const [pullModalOpen, setPullModalOpen] = useState(false);
   const [pullSubmitting, setPullSubmitting] = useState(false);
+  const [finalLedgerUploading, setFinalLedgerUploading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -620,6 +621,41 @@ function FilePanel({ companyCode }) {
     }
   };
 
+  const uploadFinalLedgerFile = async (file) => {
+    if (!companyCode) {
+      message.warning("请先选择公司");
+      return;
+    }
+    Modal.confirm({
+      title: "确认上传为最终台账？",
+      content: `该操作会覆盖公司 ${companyCode} 在 ${yearMonth} 的当前最终台账，并用于后续台账生成。`,
+      okText: "确认覆盖",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      async onOk() {
+        const fileName = file?.name || "";
+        if (!fileName.toLowerCase().endsWith(".xlsx")) {
+          message.error("仅支持上传 .xlsx 文件");
+          return;
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("companyCode", companyCode);
+        formData.append("yearMonth", yearMonth);
+        try {
+          setFinalLedgerUploading(true);
+          await client.post("/tax-ledger/ledger/final-ledger/upload", formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+          });
+          message.success("最终台账已上传并生效");
+          await load();
+        } finally {
+          setFinalLedgerUploading(false);
+        }
+      }
+    });
+  };
+
   const closePreview = () => {
     setPreviewOpen(false);
     setPreviewLoading(false);
@@ -709,6 +745,19 @@ function FilePanel({ companyCode }) {
           openFileDialogOnClick={false}
         >
           <Button icon={<UploadOutlined />} onClick={onOpenUploadModal}>上传文件</Button>
+        </Upload>
+        <Upload
+          showUploadList={false}
+          accept=".xlsx"
+          maxCount={1}
+          beforeUpload={(file) => {
+            uploadFinalLedgerFile(file);
+            return Upload.LIST_IGNORE;
+          }}
+        >
+          <Button danger loading={finalLedgerUploading} disabled={!companyCode}>
+            上传最终台账
+          </Button>
         </Upload>
         <Button onClick={onOpenPullModal}>拉取数据湖</Button>
       </Space>
@@ -1051,6 +1100,7 @@ function LedgerPanel({ companyCode }) {
   const [jobDetail, setJobDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [publishingJobId, setPublishingJobId] = useState(null);
 
   const runningStatuses = ["VALIDATING", "GENERATING"];
   const failedStatuses = ["VALIDATION_FAILED", "FAILED"];
@@ -1149,6 +1199,19 @@ function LedgerPanel({ companyCode }) {
     }
   };
 
+  const publishFinalLedger = async (jobId) => {
+    try {
+      setPublishingJobId(jobId);
+      await client.post(`/tax-ledger/ledger/jobs/${jobId}/publish-final-ledger`);
+      message.success("已设为最终台账，将用于后续台账生成");
+      await load();
+    } catch {
+      // 失败提示已由全局拦截器处理
+    } finally {
+      setPublishingJobId(null);
+    }
+  };
+
   const hasRunningJob = rows.some((item) => runningStatuses.includes(item?.status));
 
   return (
@@ -1210,6 +1273,21 @@ function LedgerPanel({ companyCode }) {
                 >
                   下载
                 </Button>
+                <Popconfirm
+                  title="确认设为最终台账？"
+                  description="将覆盖当前公司+月份的最终台账，并用于后续台账生成。"
+                  okText="确认覆盖"
+                  okButtonProps={{ danger: true }}
+                  cancelText="取消"
+                  onConfirm={() => publishFinalLedger(row.id)}
+                >
+                  <Button
+                    disabled={row.status !== "SUCCESS" || publishingJobId === row.id}
+                    loading={publishingJobId === row.id}
+                  >
+                    设为最终台账
+                  </Button>
+                </Popconfirm>
                 <Button
                   disabled={!failedStatuses.includes(row.status)}
                   onClick={() => retryJob(row.id)}

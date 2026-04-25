@@ -72,7 +72,7 @@ public class VatChangeAppendixSheetParser implements SheetParser<VatChangeAppend
                         }
                     })
                     .headRowNumber(0)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doRead();
         } catch (Exception e) {
             result.addIssue("INVALID_WORKBOOK: " + e.getMessage());

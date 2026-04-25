@@ -40,7 +40,7 @@ public class ContractStampDutyLedgerSheetParser implements SheetParser<List<Cont
             List<ContractStampDutyLedgerItemDTO> rows = EasyExcelFactory.read(inputStream)
                     .registerConverter(new SafeBigDecimalReadConverter())
                     .head(ContractStampDutyLedgerItemDTO.class)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doReadSync();
             result.setData(rows);
             return result;

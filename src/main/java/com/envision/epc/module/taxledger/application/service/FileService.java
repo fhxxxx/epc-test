@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.YearMonth;
 import java.util.Locale;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -46,6 +47,7 @@ public class FileService {
      */
     public FileRecord upload(String companyCode, String yearMonth, FileCategoryEnum category, MultipartFile file) throws IOException {
         permissionService.checkCompanyAccess(companyCode);
+        String normalizedYearMonth = normalizeYearMonth(yearMonth);
         if (file == null || file.isEmpty()) {
             throw new BizException(ErrorCode.BAD_REQUEST, "empty file");
         }
@@ -64,13 +66,13 @@ public class FileService {
         validateXlsx(file, filename);
 
         String blobPath = String.format("tax-ledger/%s/%s/%s/%s_%s.xlsx",
-                companyCode, yearMonth, category.name(), LocalDateTime.now().format(TS_FORMATTER), UUID.randomUUID());
+                companyCode, normalizedYearMonth, category.name(), LocalDateTime.now().format(TS_FORMATTER), UUID.randomUUID());
 
         try (InputStream inputStream = file.getInputStream()) {
             blobStorageRemote.upload(blobPath, inputStream);
         }
 
-        FileRecord record = saveOrReplace(companyCode, yearMonth, filename, category, blobPath, file.getSize());
+        FileRecord record = saveOrReplace(companyCode, normalizedYearMonth, filename, category, blobPath, file.getSize());
         if (category.isManualUpload()) {
             fileParseOrchestratorService.parseAsync(record.getId(), permissionService.currentUserCode());
         }
@@ -140,9 +142,10 @@ public class FileService {
      * 列表查询
      */
     public List<FileRecord> list(String companyCode, String yearMonth) {
+        String normalizedYearMonth = normalizeYearMonth(yearMonth);
         LambdaQueryWrapper<FileRecord> queryWrapper = new LambdaQueryWrapper<FileRecord>()
                 .eq(FileRecord::getIsDeleted, 0)
-                .eq(FileRecord::getYearMonth, yearMonth)
+                .eq(FileRecord::getYearMonth, normalizedYearMonth)
                 .orderByDesc(FileRecord::getCreateTime);
 
         if (StringUtils.hasText(companyCode)) {
@@ -214,5 +217,26 @@ public class FileService {
         }
         permissionService.checkCompanyAccess(record.getCompanyCode());
         return fileParseOrchestratorService.loadParsedResultOrParse(record, permissionService.currentUserCode());
+    }
+
+    private String normalizeYearMonth(String yearMonth) {
+        if (!StringUtils.hasText(yearMonth)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "yearMonth is required");
+        }
+        String text = yearMonth.trim();
+        try {
+            if (text.matches("^\\d{6}$")) {
+                return YearMonth.parse(text.substring(0, 4) + "-" + text.substring(4, 6)).toString();
+            }
+            if (text.matches("^\\d{4}-\\d{2}$")) {
+                return YearMonth.parse(text).toString();
+            }
+            throw new BizException(ErrorCode.BAD_REQUEST, "invalid yearMonth format");
+        } catch (Exception ex) {
+            if (ex instanceof BizException bizException) {
+                throw bizException;
+            }
+            throw new BizException(ErrorCode.BAD_REQUEST, "invalid yearMonth format");
+        }
     }
 }

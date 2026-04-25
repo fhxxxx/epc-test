@@ -139,8 +139,8 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<List<Monthly
         }
     }
 
-    private static List<Map<Integer, String>> readRows(InputStream inputStream,
-                                                       ParseResult<List<MonthlyTaxSectionDTO>> result) {
+    private List<Map<Integer, String>> readRows(InputStream inputStream,
+                                                ParseResult<List<MonthlyTaxSectionDTO>> result) {
         List<Map<Integer, String>> rows = new ArrayList<>();
         try {
             EasyExcelFactory.read(inputStream, new AnalysisEventListener<Map<Integer, String>>() {
@@ -155,7 +155,7 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<List<Monthly
                         }
                     })
                     .headRowNumber(0)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doRead();
         } catch (Exception e) {
             result.addIssue("睿景景程月结数据表-报税：读取Excel失败 - " + e.getMessage());

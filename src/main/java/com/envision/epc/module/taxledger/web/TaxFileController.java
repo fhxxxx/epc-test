@@ -30,7 +30,12 @@ public class TaxFileController {
         return Arrays.stream(FileCategoryEnum.values())
                 .filter(item -> !manualUpload || item.isManualUpload())
                 .filter(item -> companyCode == null || companyCode.isBlank() || item.isAllowedForCompany(companyCode))
-                .map(item -> new FileCategoryOption(item.name(), item.getDisplayName(), item.isManualUpload(), item.getScope().name()))
+                .map(item -> new FileCategoryOption(
+                        item.name(),
+                        item.getDisplayName(),
+                        item.isManualUpload(),
+                        item.isVisibleInFinalLedger(),
+                        item.getScope().name()))
                 .toList();
     }
 
@@ -86,6 +91,10 @@ public class TaxFileController {
         }
     }
 
-    public record FileCategoryOption(String value, String label, boolean manualUpload, String scope) {
+    public record FileCategoryOption(String value,
+                                     String label,
+                                     boolean manualUpload,
+                                     boolean visibleInFinalLedger,
+                                     String scope) {
     }
 }

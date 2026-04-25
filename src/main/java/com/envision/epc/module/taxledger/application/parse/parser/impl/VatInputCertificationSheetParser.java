@@ -48,7 +48,7 @@ public class VatInputCertificationSheetParser implements SheetParser<List<VatInp
             List<VatInputCertificationItemDTO> rows = EasyExcelFactory.read(inputStream)
                     .registerConverter(new SafeBigDecimalReadConverter())
                     .head(VatInputCertificationItemDTO.class)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .headRowNumber(3)
                     .doReadSync();
             result.setData(rows);

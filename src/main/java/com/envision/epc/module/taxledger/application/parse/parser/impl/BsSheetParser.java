@@ -8,6 +8,7 @@ import com.envision.epc.module.taxledger.application.dto.BsStatementRowDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 
@@ -47,7 +48,7 @@ public class BsSheetParser implements SheetParser<List<BsStatementRowDTO>> {
                 .build();
         try {
             Workbook workbook = new Workbook(inputStream);
-            Worksheet sheet = workbook.getWorksheets().get(0);
+            Worksheet sheet = SheetSelectUtils.resolveAsposeSheet(workbook, category());
             Cells cells = sheet.getCells();
             int maxRow = cells.getMaxDataRow();
             Map<Integer, BsStatementRowDTO> rowMap = new TreeMap<>();

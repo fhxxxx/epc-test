@@ -64,7 +64,7 @@ public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRow
                         }
                     })
                     .headRowNumber(0)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doRead();
 
             List<StampDutySummaryRowDTO> rows = parseSummaryBlock(rawRows);

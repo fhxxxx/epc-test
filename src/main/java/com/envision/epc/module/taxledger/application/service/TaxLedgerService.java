@@ -13,9 +13,14 @@ import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.PlStatementRowDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
 import com.envision.epc.module.taxledger.application.dto.StampDutyDetailRowDTO;
-import com.envision.epc.module.taxledger.application.dto.SummarySheetDTO;
 import com.envision.epc.module.taxledger.application.dto.UninvoicedMonitorItemDTO;
 import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO;
+import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
+import com.envision.epc.module.taxledger.application.ledger.LedgerParsedDataGateway;
+import com.envision.epc.module.taxledger.application.ledger.LedgerParsedDataGatewayFactory;
+import com.envision.epc.module.taxledger.application.ledger.LedgerRenderContext;
+import com.envision.epc.module.taxledger.application.ledger.LedgerWorkbookData;
+import com.envision.epc.module.taxledger.application.ledger.LedgerWorkbookDataAssembler;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileParseStatusEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
@@ -32,6 +37,7 @@ import com.envision.epc.module.taxledger.domain.LedgerRunTask;
 import com.envision.epc.module.taxledger.domain.LedgerRunTriggerEnum;
 import com.envision.epc.module.taxledger.domain.ManualActionTypeEnum;
 import com.envision.epc.module.taxledger.domain.RunTaskStatusEnum;
+import com.envision.epc.module.taxledger.excel.LedgerBuildOutput;
 import com.envision.epc.module.taxledger.excel.TaxLedgerExcelService;
 import com.envision.epc.module.taxledger.infrastructure.FileRecordMapper;
 import com.envision.epc.module.taxledger.infrastructure.LedgerRecordMapper;
@@ -104,7 +110,8 @@ public class TaxLedgerService {
     private final BlobStorageRemote blobStorageRemote;
     private final FileParseOrchestratorService fileParseOrchestratorService;
     private final ParsedResultReader parsedResultReader;
-    private final SummarySheetDataAssembler summarySheetDataAssembler;
+    private final LedgerParsedDataGatewayFactory parsedDataGatewayFactory;
+    private final LedgerWorkbookDataAssembler workbookDataAssembler;
     private final TaxLedgerExcelService excelService;
     private final PermissionService permissionService;
     private final TaskExecutor taskExecutor;
@@ -1047,17 +1054,36 @@ public class TaxLedgerService {
         List<FileRecord> files = loadFiles(ledger.getCompanyCode(), ledger.getYearMonth());
         List<LedgerRunTask> tasks = loadTasks(run.getId());
         Map<String, Object> nodeOutputs = loadNodeOutputs(tasks);
-        SummarySheetDTO summaryData = summarySheetDataAssembler.assemble(
-                ledger.getCompanyCode(), ledger.getYearMonth(), files, nodeOutputs);
+        PrecheckSnapshotDTO snapshot = loadPrecheckSnapshot(run.getId());
+        LedgerParsedDataGateway parsedDataGateway = parsedDataGatewayFactory.create(files);
+        LedgerBuildContext buildContext = LedgerBuildContext.builder()
+                .companyCode(ledger.getCompanyCode())
+                .yearMonth(ledger.getYearMonth())
+                .snapshot(snapshot)
+                .files(files)
+                .nodeOutputs(nodeOutputs)
+                .traceId(String.valueOf(run.getId()))
+                .operator("system")
+                .parsedDataGateway(parsedDataGateway)
+                .build();
 
-        byte[] finalLedger = excelService.buildLedger(
-                ledger.getCompanyCode(), ledger.getYearMonth(), files, nodeOutputs, summaryData);
+        LedgerWorkbookData workbookData = workbookDataAssembler.buildAll(buildContext);
+        LedgerRenderContext renderContext = LedgerRenderContext.builder()
+                .companyCode(ledger.getCompanyCode())
+                .yearMonth(ledger.getYearMonth())
+                .templateLoader("classpath")
+                .stylePolicy("DEFAULT")
+                .formulaPolicy("DYNAMIC")
+                .build();
+        LedgerBuildOutput output = excelService.buildLedger(workbookData, renderContext);
+        byte[] finalLedger = output.getWorkbookBytes();
         String blobPath = String.format("tax-ledger/%s/%s/final/%s",
                 ledger.getCompanyCode(), ledger.getYearMonth(), ledger.getLedgerName());
         blobStorageRemote.upload(blobPath, new ByteArrayInputStream(finalLedger));
         int finalBatchNo = DAG.stream().map(NodeSpec::batchNo).max(Integer::compareTo).orElse(1);
         saveArtifact(run.getId(), finalBatchNo, LedgerArtifactTypeEnum.FINAL_LEDGER, ledger.getLedgerName(), blobPath,
                 (long) finalLedger.length, sha256(finalLedger));
+        writeLedgerBuildReportArtifact(run.getId(), finalBatchNo, ledger, output.getBuildReport());
 
         run.setStatus(LedgerRunStatusEnum.SUCCESS);
         run.setEndedAt(LocalDateTime.now());
@@ -1161,6 +1187,25 @@ public class TaxLedgerService {
                     "precheck-snapshot.json", path, (long) bytes.length, sha256(bytes));
         } catch (Exception e) {
             throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR, "write precheck snapshot failed: " + e.getMessage());
+        }
+    }
+
+    private void writeLedgerBuildReportArtifact(Long runId,
+                                                Integer batchNo,
+                                                LedgerRecord ledger,
+                                                Map<String, Object> report) {
+        if (report == null || report.isEmpty()) {
+            return;
+        }
+        try {
+            byte[] bytes = objectMapper.writeValueAsBytes(report);
+            String path = String.format("tax-ledger/%s/%s/runs/%d/ledger-build-report.json",
+                    ledger.getCompanyCode(), ledger.getYearMonth(), runId);
+            blobStorageRemote.upload(path, new ByteArrayInputStream(bytes));
+            saveArtifact(runId, batchNo, LedgerArtifactTypeEnum.LEDGER_BUILD_REPORT,
+                    "ledger-build-report.json", path, (long) bytes.length, sha256(bytes));
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR, "write ledger build report failed: " + e.getMessage());
         }
     }
 

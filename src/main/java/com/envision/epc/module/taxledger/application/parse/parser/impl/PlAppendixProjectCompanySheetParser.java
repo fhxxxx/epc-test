@@ -40,7 +40,7 @@ public class PlAppendixProjectCompanySheetParser implements SheetParser<List<PlA
             List<PlAppendixProjectCompanyUploadDTO> rows = EasyExcelFactory.read(inputStream)
                     .registerConverter(new SafeBigDecimalReadConverter())
                     .head(PlAppendixProjectCompanyUploadDTO.class)
-                    .sheet()
+                    .sheet(category().getTargetSheetName())
                     .doReadSync();
             result.setData(rows);
             return result;

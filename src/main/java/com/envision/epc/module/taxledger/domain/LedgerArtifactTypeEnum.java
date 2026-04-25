@@ -7,5 +7,6 @@ public enum LedgerArtifactTypeEnum {
     PRECHECK_SNAPSHOT,
     STAGE_SNAPSHOT,
     NODE_OUTPUT_JSON,
-    FINAL_LEDGER
+    FINAL_LEDGER,
+    LEDGER_BUILD_REPORT
 }

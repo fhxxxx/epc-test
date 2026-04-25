@@ -39,6 +39,17 @@ public class SummaryTemplateRenderService {
     private static final String NR_FINAL_TOTAL = "NR_FINAL_TOTAL_TMPL";
 
     public Workbook render(SummarySheetDTO summaryData) throws Exception {
+        Workbook workbook = new Workbook();
+        renderInto(workbook, summaryData);
+        if (workbook.getWorksheets().getCount() > 1
+                && "Sheet1".equals(workbook.getWorksheets().get(0).getName())
+                && workbook.getWorksheets().get(0).getCells().getMaxDataRow() < 0) {
+            workbook.getWorksheets().removeAt(0);
+        }
+        return workbook;
+    }
+
+    public void renderInto(Workbook workbook, SummarySheetDTO summaryData) throws Exception {
         if (summaryData == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "summaryData is null");
         }
@@ -46,23 +57,22 @@ public class SummaryTemplateRenderService {
             if (templateInput == null) {
                 throw new BizException(ErrorCode.BAD_REQUEST, "summary template not found: " + TEMPLATE_PATH);
             }
-            Workbook workbook = new Workbook(templateInput);
-            Worksheet templateSheet = workbook.getWorksheets().get(TEMPLATE_SHEET);
+            Workbook templateWorkbook = new Workbook(templateInput);
+            Worksheet templateSheet = templateWorkbook.getWorksheets().get(TEMPLATE_SHEET);
             if (templateSheet == null) {
                 throw new BizException(ErrorCode.BAD_REQUEST, "summary template sheet not found: " + TEMPLATE_SHEET);
             }
 
-            int summaryIndex = workbook.getWorksheets().addCopy(templateSheet.getIndex());
+            int summaryIndex = workbook.getWorksheets().add();
             Worksheet summarySheet = workbook.getWorksheets().get(summaryIndex);
-            summarySheet.setName(OUTPUT_SHEET);
+            summarySheet.copy(templateSheet);
+            summarySheet.setName(resolveSheetName(workbook, OUTPUT_SHEET));
 
-            renderSummaryRows(workbook, templateSheet, summarySheet, summaryData);
-            cleanupSheets(workbook, summarySheet.getName());
-            return workbook;
+            renderSummaryRows(templateWorkbook, templateSheet, summarySheet, summaryData);
         }
     }
 
-    private void renderSummaryRows(Workbook workbook,
+    private void renderSummaryRows(Workbook templateWorkbook,
                                    Worksheet templateSheet,
                                    Worksheet summarySheet,
                                    SummarySheetDTO summaryData) throws Exception {
@@ -71,16 +81,16 @@ public class SummaryTemplateRenderService {
 
         replaceGlobalTokens(summarySheet, summaryData);
 
-        int stampHeaderRow = resolveRow(workbook, NR_STAMP_HEADER);
-        int stampDetailRow = resolveRow(workbook, NR_STAMP_DETAIL);
-        int stampSubtotalRow = resolveRow(workbook, NR_STAMP_SUBTOTAL);
-        int commonHeaderRow = resolveRow(workbook, NR_COMMON_HEADER);
-        int commonDetailRow = resolveRow(workbook, NR_COMMON_DETAIL);
-        int commonSubtotalRow = resolveRow(workbook, NR_COMMON_SUBTOTAL);
-        int citHeaderRow = resolveRow(workbook, NR_CIT_HEADER);
-        int citDetailRow = resolveRow(workbook, NR_CIT_DETAIL);
-        int citSubtotalRow = resolveRow(workbook, NR_CIT_SUBTOTAL);
-        int finalTotalRow = resolveRow(workbook, NR_FINAL_TOTAL);
+        int stampHeaderRow = resolveRow(templateWorkbook, NR_STAMP_HEADER);
+        int stampDetailRow = resolveRow(templateWorkbook, NR_STAMP_DETAIL);
+        int stampSubtotalRow = resolveRow(templateWorkbook, NR_STAMP_SUBTOTAL);
+        int commonHeaderRow = resolveRow(templateWorkbook, NR_COMMON_HEADER);
+        int commonDetailRow = resolveRow(templateWorkbook, NR_COMMON_DETAIL);
+        int commonSubtotalRow = resolveRow(templateWorkbook, NR_COMMON_SUBTOTAL);
+        int citHeaderRow = resolveRow(templateWorkbook, NR_CIT_HEADER);
+        int citDetailRow = resolveRow(templateWorkbook, NR_CIT_DETAIL);
+        int citSubtotalRow = resolveRow(templateWorkbook, NR_CIT_SUBTOTAL);
+        int finalTotalRow = resolveRow(templateWorkbook, NR_FINAL_TOTAL);
 
         int blockStart = stampHeaderRow;
         int blockEnd = finalTotalRow;
@@ -293,8 +303,8 @@ public class SummaryTemplateRenderService {
         }
     }
 
-    private int resolveRow(Workbook workbook, String name) {
-        Name named = workbook.getWorksheets().getNames().get(name);
+    private int resolveRow(Workbook templateWorkbook, String name) {
+        Name named = templateWorkbook.getWorksheets().getNames().get(name);
         if (named == null) {
             throw new BizException(ErrorCode.BAD_REQUEST,
                     "summary named range missing, template=" + TEMPLATE_PATH + ", sheet=" + TEMPLATE_SHEET + ", namedRange=" + name);
@@ -354,17 +364,18 @@ public class SummaryTemplateRenderService {
         cells.get(row, col).putValue(value);
     }
 
-    private void cleanupSheets(Workbook workbook, String keepSheetName) {
-        for (int i = workbook.getWorksheets().getCount() - 1; i >= 0; i--) {
-            Worksheet ws = workbook.getWorksheets().get(i);
-            if (keepSheetName.equals(ws.getName())) {
-                continue;
-            }
-            workbook.getWorksheets().removeAt(i);
-        }
-    }
-
     private int size(List<?> list) {
         return list == null ? 0 : list.size();
+    }
+
+    private String resolveSheetName(Workbook workbook, String baseName) {
+        if (workbook.getWorksheets().get(baseName) == null) {
+            return baseName;
+        }
+        int idx = 1;
+        while (workbook.getWorksheets().get(baseName + "_" + idx) != null) {
+            idx++;
+        }
+        return baseName + "_" + idx;
     }
 }
