@@ -56,6 +56,8 @@ import java.util.UUID;
 public class LedgerPrecheckService {
     private static final int WAIT_PARSE_MAX_SECONDS = 300;
     private static final String PREVIOUS_LEDGER_REQUIRED_MSG = "未检测到前序台账，请先上传初始台账后再生成。";
+    // 临时开关：true 时跳过全部前序台账校验
+    private static final boolean SKIP_PREVIOUS_LEDGER_VALIDATION = true;//todo remove
 
     private final FileRecordMapper fileRecordMapper;
     private final LedgerRecordMapper ledgerRecordMapper;
@@ -99,7 +101,11 @@ public class LedgerPrecheckService {
         snapshot.setInputs(inputs);
         snapshot.setFingerprint(UUID.randomUUID().toString().replace("-", ""));
         snapshot.setGeneratedAt(LocalDateTime.now());
-        snapshot.setPreviousLedgerValidation(precheckPreviousLedgerPart(companyCode, periodMonth));
+        if (SKIP_PREVIOUS_LEDGER_VALIDATION) {
+            snapshot.setPreviousLedgerValidation(buildSkippedPreviousLedgerValidation(periodMonth));
+        } else {
+            snapshot.setPreviousLedgerValidation(precheckPreviousLedgerPart(companyCode, periodMonth));
+        }
 
         if (isCompany2320Or2355(companyCode)) {
             FileRecord n30File = parsedFiles.get(FileCategoryEnum.PL_APPENDIX_2320);
@@ -180,6 +186,18 @@ public class LedgerPrecheckService {
         validation.setCheckedSheets(checkedSheets);
         validation.setIssues(List.of());
         validation.setParsedSummary(parsedSummary);
+        return validation;
+    }
+
+    private PrecheckSnapshotDTO.PreviousLedgerValidation buildSkippedPreviousLedgerValidation(String periodMonth) {
+        PrecheckSnapshotDTO.PreviousLedgerValidation validation = new PrecheckSnapshotDTO.PreviousLedgerValidation();
+        String previousPeriod = parseYearMonth(periodMonth).minusMonths(1).toString();
+        validation.setPreviousPeriodMonth(previousPeriod);
+        validation.setPreviousLedgerRunId(null);
+        validation.setPreviousLedgerArtifactPath(null);
+        validation.setCheckedSheets(List.of());
+        validation.setIssues(List.of("前序台账校验已临时跳过"));
+        validation.setParsedSummary(Map.of("skipped", true));
         return validation;
     }
 

@@ -1053,19 +1053,7 @@ public class TaxLedgerService {
     private void finalizeRunSuccess(LedgerRun run, LedgerRecord ledger) throws Exception {
         List<FileRecord> files = loadFiles(ledger.getCompanyCode(), ledger.getYearMonth());
         List<LedgerRunTask> tasks = loadTasks(run.getId());
-        Map<String, Object> nodeOutputs = loadNodeOutputs(tasks);
-        PrecheckSnapshotDTO snapshot = loadPrecheckSnapshot(run.getId());
-        LedgerParsedDataGateway parsedDataGateway = parsedDataGatewayFactory.create(files);
-        LedgerBuildContext buildContext = LedgerBuildContext.builder()
-                .companyCode(ledger.getCompanyCode())
-                .yearMonth(ledger.getYearMonth())
-                .snapshot(snapshot)
-                .files(files)
-                .nodeOutputs(nodeOutputs)
-                .traceId(String.valueOf(run.getId()))
-                .operator("system")
-                .parsedDataGateway(parsedDataGateway)
-                .build();
+        LedgerBuildContext buildContext = buildLedgerContext(run, ledger, files, tasks);
 
         LedgerWorkbookData workbookData = workbookDataAssembler.buildAll(buildContext);
         LedgerRenderContext renderContext = LedgerRenderContext.builder()
@@ -1096,6 +1084,53 @@ public class TaxLedgerService {
         ledgerRecordMapper.updateById(ledger);
     }
 
+    private LedgerBuildContext buildLedgerContext(LedgerRun run,
+                                                  LedgerRecord ledger,
+                                                  List<FileRecord> files,
+                                                  List<LedgerRunTask> tasks) {
+        if (ledger == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "组装 LedgerBuildContext 失败: ledger 为空");
+        }
+        if (run == null || run.getId() == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "组装 LedgerBuildContext 失败: runId 为空");
+        }
+        if (ledger.getCompanyCode() == null || ledger.getCompanyCode().isBlank()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "组装 LedgerBuildContext 失败: companyCode 为空");
+        }
+        if (ledger.getYearMonth() == null || ledger.getYearMonth().isBlank()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "组装 LedgerBuildContext 失败: yearMonth 为空");
+        }
+        List<FileRecord> safeFiles = files == null ? List.of() : files;
+        List<LedgerRunTask> safeTasks = tasks == null ? List.of() : tasks;
+
+        Map<String, Object> nodeOutputs = loadNodeOutputs(safeTasks);
+        PrecheckSnapshotDTO snapshot = tryLoadPrecheckSnapshot(run.getId());
+        LedgerParsedDataGateway parsedDataGateway = parsedDataGatewayFactory.create(safeFiles);
+        if (parsedDataGateway == null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "组装 LedgerBuildContext 失败: parsedDataGateway 为空");
+        }
+
+        LedgerBuildContext context = LedgerBuildContext.builder()
+                .companyCode(ledger.getCompanyCode())
+                .yearMonth(ledger.getYearMonth())
+                .snapshot(snapshot)
+                .files(safeFiles)
+                .nodeOutputs(nodeOutputs)
+                .traceId(String.valueOf(run.getId()))
+                .operator("system")
+                .parsedDataGateway(parsedDataGateway)
+                .build();
+        log.info("ledger context built: runId={}, companyCode={}, yearMonth={}, filesCount={}, taskCount={}, nodeOutputCount={}, snapshotPresent={}",
+                run.getId(),
+                context.getCompanyCode(),
+                context.getYearMonth(),
+                safeFiles.size(),
+                safeTasks.size(),
+                nodeOutputs.size(),
+                snapshot != null);
+        return context;
+    }
+
     private Map<String, Object> loadNodeOutputs(List<LedgerRunTask> tasks) {
         Map<String, Object> outputs = new HashMap<>();
         for (LedgerRunTask task : tasks) {
@@ -1112,6 +1147,18 @@ public class TaxLedgerService {
             }
         }
         return outputs;
+    }
+
+    private PrecheckSnapshotDTO tryLoadPrecheckSnapshot(Long runId) {
+        try {
+            return loadPrecheckSnapshot(runId);
+        } catch (BizException ex) {
+            if (ex.getMessage() != null && ex.getMessage().contains("PRECHECK_SNAPSHOT")) {
+                log.info("precheck snapshot is absent when building ledger context, runId={}", runId);
+                return null;
+            }
+            throw ex;
+        }
     }
 
     private boolean shouldBlockForManual(LedgerRun run, LedgerRunTask task) {
