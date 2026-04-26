@@ -4,7 +4,9 @@ import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.BsStatementRowDTO;
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
 import com.envision.epc.module.taxledger.application.dto.CumulativeTaxSummary23202355ColumnDTO;
-import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
+import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendixProjectCompanyUploadDTO;
@@ -60,11 +62,11 @@ public final class ParsedResultTypeCatalog {
         registerList(FileCategoryEnum.VAT_TABLE_ONE_CUMULATIVE_OUTPUT, VatTableOneCumulativeOutputItemDTO.class);
         registerList(FileCategoryEnum.TAX_ACCOUNTING_DIFFERENCE_MONITOR, TaxAccountingDifferenceMonitor23202355ItemDTO.class);
         registerList(FileCategoryEnum.UNINVOICED_MONITOR, UninvoicedMonitorItemDTO.class);
-        registerList(FileCategoryEnum.DL_INCOME, DatalakeExportRowDTO.class);
-        registerList(FileCategoryEnum.DL_OUTPUT, DatalakeExportRowDTO.class);
-        registerList(FileCategoryEnum.DL_INPUT, DatalakeExportRowDTO.class);
-        registerList(FileCategoryEnum.DL_INCOME_TAX, DatalakeExportRowDTO.class);
-        registerList(FileCategoryEnum.DL_OTHER, DatalakeExportRowDTO.class);
+        registerObject(FileCategoryEnum.DL_INCOME, Object.class);
+        registerObject(FileCategoryEnum.DL_OUTPUT, DlOutputParsedDTO.class);
+        registerObject(FileCategoryEnum.DL_INPUT, DlInputParsedDTO.class);
+        registerObject(FileCategoryEnum.DL_INCOME_TAX, Object.class);
+        registerObject(FileCategoryEnum.DL_OTHER, DlOtherParsedDTO.class);
     }
 
     private ParsedResultTypeCatalog() {

@@ -6,7 +6,8 @@ import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerRunCommand;
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
-import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
 import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
 import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
@@ -92,6 +93,8 @@ public class TaxLedgerService {
     private static final String SCHEMA_VERSION = "v1";
     private static final Pattern TAX_RATE_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*[%％]");
     private static final String N30_FILE_LABEL = "PL附表-2320、2355";
+    private static final String ACCOUNT_INTEREST = "6603020011";
+    private static final String ACCOUNT_OTHER_INCOME = "6702000010";
 
     private static final List<NodeSpec> DAG = List.of(
             new NodeSpec("N00", 1, "", ManualActionTypeEnum.NONE, "configs,previous-ledger"),
@@ -391,12 +394,12 @@ public class TaxLedgerService {
         PrecheckSnapshotDTO snapshot = loadPrecheckSnapshot(run.getId());
 
         List<PlStatementRowDTO> plRows = readRequiredParsedList(snapshot, FileCategoryEnum.PL, PlStatementRowDTO.class);
-        List<DatalakeExportRowDTO> dlOtherRows = readRequiredParsedList(snapshot, FileCategoryEnum.DL_OTHER, DatalakeExportRowDTO.class);
-        List<DatalakeExportRowDTO> dlOutputRows = readRequiredParsedList(snapshot, FileCategoryEnum.DL_OUTPUT, DatalakeExportRowDTO.class);
+        DlOtherParsedDTO dlOther = readRequiredParsedObject(snapshot, FileCategoryEnum.DL_OTHER, DlOtherParsedDTO.class);
+        DlOutputParsedDTO dlOutput = readRequiredParsedObject(snapshot, FileCategoryEnum.DL_OUTPUT, DlOutputParsedDTO.class);
         VatOutputSheetUploadDTO vatOutput = readRequiredParsedObject(snapshot, FileCategoryEnum.VAT_OUTPUT, VatOutputSheetUploadDTO.class);
 
         Map<String, Object> stampDutyBlock = buildStampDutyPrecompute(ledger.getCompanyCode(), ledger.getYearMonth(), snapshot);
-        Map<String, Object> uninvoicedBlock = buildUninvoicedPrecompute(run, ledger, plRows, dlOtherRows, dlOutputRows, vatOutput);
+        Map<String, Object> uninvoicedBlock = buildUninvoicedPrecompute(run, ledger, plRows, dlOther, dlOutput, vatOutput);
 
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("stampDutyNon23202355", stampDutyBlock);
@@ -795,8 +798,8 @@ public class TaxLedgerService {
     private Map<String, Object> buildUninvoicedPrecompute(LedgerRun run,
                                                           LedgerRecord ledger,
                                                           List<PlStatementRowDTO> plRows,
-                                                          List<DatalakeExportRowDTO> dlOtherRows,
-                                                          List<DatalakeExportRowDTO> dlOutputRows,
+                                                          DlOtherParsedDTO dlOther,
+                                                          DlOutputParsedDTO dlOutput,
                                                           VatOutputSheetUploadDTO vatOutput) {
         List<UninvoicedMonitorItemDTO> baseRows = loadPreviousUninvoicedRows(ledger.getCompanyCode(), ledger.getYearMonth());
         String currentPeriod = toPeriodLabel(ledger.getYearMonth());
@@ -805,9 +808,9 @@ public class TaxLedgerService {
         UninvoicedMonitorItemDTO current = new UninvoicedMonitorItemDTO();
         current.setPeriod(currentPeriod);
         current.setDeclaredMainBusinessRevenue(sumPlCurrentAmount(plRows, "主营业务收入"));
-        current.setDeclaredInterestIncome(sumDatalakeByAccount(dlOtherRows, "6603020011"));
-        current.setDeclaredOtherIncome(sumDatalakeByAccount(dlOtherRows, "6702000010"));
-        current.setDeclaredOutputTax(negate(sumDatalakeDocumentAmount(dlOutputRows)));
+        current.setDeclaredInterestIncome(sumDocumentAmountByAccount(dlOther, ACCOUNT_INTEREST));
+        current.setDeclaredOtherIncome(sumDocumentAmountByAccount(dlOther, ACCOUNT_OTHER_INCOME));
+        current.setDeclaredOutputTax(negate(sumDlOutputDocumentAmount(dlOutput)));
 
         BigDecimal invoicedSalesIncome = sumVatOutputByTotal(vatOutput, true);
         BigDecimal invoicedOutputTax = sumVatOutputByTotal(vatOutput, false);
@@ -932,28 +935,24 @@ public class TaxLedgerService {
         return sum;
     }
 
-    private BigDecimal sumDatalakeByAccount(List<DatalakeExportRowDTO> rows, String account) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (DatalakeExportRowDTO row : rows) {
-            if (row == null) {
-                continue;
-            }
-            if (account.equals(normalizeText(row.getAccount()))) {
-                sum = add(sum, toBigDecimal(row.getDocumentAmount()));
-            }
+    private BigDecimal sumDocumentAmountByAccount(DlOtherParsedDTO dlOther, String account) {
+        if (dlOther == null || dlOther.getDocumentAmountSumByAccount() == null) {
+            return BigDecimal.ZERO;
         }
-        return sum;
+        BigDecimal value = dlOther.getDocumentAmountSumByAccount().get(account);
+        if (value == null) {
+            log.warn("DL_OTHER 缺少关键聚合键, account={}", account);
+            return BigDecimal.ZERO;
+        }
+        return value;
     }
 
-    private BigDecimal sumDatalakeDocumentAmount(List<DatalakeExportRowDTO> rows) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (DatalakeExportRowDTO row : rows) {
-            if (row == null) {
-                continue;
-            }
-            sum = add(sum, toBigDecimal(row.getDocumentAmount()));
+    private BigDecimal sumDlOutputDocumentAmount(DlOutputParsedDTO dlOutput) {
+        if (dlOutput == null || dlOutput.getDocumentAmountSum() == null) {
+            log.warn("DL_OUTPUT 缺少关键聚合字段 documentAmountSum");
+            return BigDecimal.ZERO;
         }
-        return sum;
+        return dlOutput.getDocumentAmountSum();
     }
 
     private BigDecimal sumVatOutputByTotal(VatOutputSheetUploadDTO vatOutput, boolean amount) {
@@ -1000,22 +999,6 @@ public class TaxLedgerService {
             return null;
         }
         return value.trim();
-    }
-
-    private BigDecimal toBigDecimal(String raw) {
-        String text = normalizeText(raw);
-        if (text == null || text.isBlank()) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            String normalized = text.replace(",", "");
-            if (normalized.startsWith("(") && normalized.endsWith(")")) {
-                normalized = "-" + normalized.substring(1, normalized.length() - 1);
-            }
-            return new BigDecimal(normalized);
-        } catch (Exception ex) {
-            return BigDecimal.ZERO;
-        }
     }
 
     private BigDecimal multiply(BigDecimal a, BigDecimal b, BigDecimal c) {

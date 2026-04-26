@@ -6,28 +6,33 @@ import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
+import com.envision.epc.module.taxledger.application.parse.parser.ParserValueUtils;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
+import org.springframework.util.CollectionUtils;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * 数据湖明细通用解析器基类。
  * 适用于表头结构一致的 DL_* 文件类型。
  */
-public abstract class AbstractDatalakeDetailSheetParser implements SheetParser<List<DatalakeExportRowDTO>> {
+public abstract class AbstractDatalakeDetailSheetParser<T> implements SheetParser<T> {
+    protected abstract Class<T> resultClass();
+
+    protected abstract T aggregate(List<DatalakeExportRowDTO> rows);
+
     @Override
-    public Class<List<DatalakeExportRowDTO>> resultType() {
-        @SuppressWarnings("unchecked")
-        Class<List<DatalakeExportRowDTO>> cls = (Class<List<DatalakeExportRowDTO>>) (Class<?>) List.class;
-        return cls;
+    public Class<T> resultType() {
+        return resultClass();
     }
 
     @Override
-    public ParseResult<List<DatalakeExportRowDTO>> parse(InputStream inputStream, ParseContext context) {
-        ParseResult<List<DatalakeExportRowDTO>> result = ParseResult.<List<DatalakeExportRowDTO>>builder()
-                .data(List.of())
+    public ParseResult<T> parse(InputStream inputStream, ParseContext context) {
+        ParseResult<T> result = ParseResult.<T>builder()
+                .data(null)
                 .build();
         try {
             ExcelReaderBuilder readerBuilder = EasyExcelFactory.read(inputStream)
@@ -35,11 +40,26 @@ public abstract class AbstractDatalakeDetailSheetParser implements SheetParser<L
                     .head(DatalakeExportRowDTO.class);
             List<DatalakeExportRowDTO> rows = SheetSelectUtils.resolveEasyExcelSheet(readerBuilder, category())
                     .doReadSync();
-            result.setData(rows);
+            if (CollectionUtils.isEmpty(rows)) {
+                rows = List.of();
+            }
+            result.setData(aggregate(rows));
             return result;
         } catch (Exception e) {
             result.addIssue("INVALID_WORKBOOK: " + e.getMessage());
             return result;
         }
+    }
+
+    protected BigDecimal amount(String value) {
+        BigDecimal parsed = ParserValueUtils.toBigDecimal(value);
+        return parsed == null ? BigDecimal.ZERO : parsed;
+    }
+
+    protected String normalizedAccount(String account) {
+        if (account == null) {
+            return "";
+        }
+        return account.trim();
     }
 }

@@ -12,6 +12,9 @@ import com.envision.epc.module.taxledger.application.command.DataLakePullCommand
 import com.envision.epc.module.taxledger.application.dto.DataLakeBatchPullResultDTO;
 import com.envision.epc.module.taxledger.application.dto.DatalakeDTO;
 import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
+import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +27,7 @@ import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -42,6 +46,9 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class DataLakeService {
     private static final DateTimeFormatter TS_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final String ACCOUNT_INTEREST = "6603020011";
+    private static final String ACCOUNT_OTHER_INCOME = "6702000010";
+    private static final String ACCOUNT_INPUT_TRANSFER_OUT = "2221010400";
 
     private final PlatformRemote platformRemote;
     private final BlobStorageRemote blobStorageRemote;
@@ -122,9 +129,10 @@ public class DataLakeService {
                         blobPath,
                         (long) bytes.length
                 );
+                Object parsedSummary = aggregateParsedResult(entry.getKey(), exportRows);
                 String parseResultPath = fileParseOrchestratorService.persistParsedResult(
                         record,
-                        exportRows,
+                        parsedSummary,
                         List.of(),
                         "datalake-pull"
                 );
@@ -175,6 +183,93 @@ public class DataLakeService {
         } catch (Exception e) {
             throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR, "datalake excel export failed: " + e.getMessage());
         }
+    }
+
+    private Object aggregateParsedResult(FileCategoryEnum category, List<DatalakeExportRowDTO> rows) {
+        return switch (category) {
+            case DL_OUTPUT -> aggregateOutput(rows);
+            case DL_OTHER -> aggregateOther(rows);
+            case DL_INPUT -> aggregateInput(rows);
+            case DL_INCOME, DL_INCOME_TAX -> null;
+            default -> null;
+        };
+    }
+
+    private DlOutputParsedDTO aggregateOutput(List<DatalakeExportRowDTO> rows) {
+        DlOutputParsedDTO dto = new DlOutputParsedDTO();
+        BigDecimal sum = BigDecimal.ZERO;
+        for (DatalakeExportRowDTO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            sum = sum.add(parseAmount(row.getDocumentAmount()));
+        }
+        dto.setDocumentAmountSum(sum);
+        return dto;
+    }
+
+    private DlOtherParsedDTO aggregateOther(List<DatalakeExportRowDTO> rows) {
+        DlOtherParsedDTO dto = new DlOtherParsedDTO();
+        dto.getDocumentAmountSumByAccount().put(ACCOUNT_INTEREST, BigDecimal.ZERO);
+        dto.getDocumentAmountSumByAccount().put(ACCOUNT_OTHER_INCOME, BigDecimal.ZERO);
+        dto.getLocalAmountSumByAccount().put(ACCOUNT_INTEREST, BigDecimal.ZERO);
+        dto.getLocalAmountSumByAccount().put(ACCOUNT_OTHER_INCOME, BigDecimal.ZERO);
+
+        for (DatalakeExportRowDTO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String account = normalizeAccount(row.getAccount());
+            if (!ACCOUNT_INTEREST.equals(account) && !ACCOUNT_OTHER_INCOME.equals(account)) {
+                continue;
+            }
+            dto.getDocumentAmountSumByAccount().compute(account, (k, v) -> safe(v).add(parseAmount(row.getDocumentAmount())));
+            dto.getLocalAmountSumByAccount().compute(account, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
+        }
+        return dto;
+    }
+
+    private DlInputParsedDTO aggregateInput(List<DatalakeExportRowDTO> rows) {
+        DlInputParsedDTO dto = new DlInputParsedDTO();
+        dto.getLocalAmountSumByAccount().put(ACCOUNT_INPUT_TRANSFER_OUT, BigDecimal.ZERO);
+
+        for (DatalakeExportRowDTO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String account = normalizeAccount(row.getAccount());
+            if (!ACCOUNT_INPUT_TRANSFER_OUT.equals(account)) {
+                continue;
+            }
+            dto.getLocalAmountSumByAccount().compute(account, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
+        }
+        return dto;
+    }
+
+    private BigDecimal parseAmount(String raw) {
+        if (CharSequenceUtil.isBlank(raw)) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            String normalized = raw.trim().replace(",", "");
+            if (normalized.startsWith("(") && normalized.endsWith(")")) {
+                normalized = "-" + normalized.substring(1, normalized.length() - 1);
+            }
+            return new BigDecimal(normalized);
+        } catch (Exception ex) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String normalizeAccount(String account) {
+        if (account == null) {
+            return "";
+        }
+        return account.trim();
     }
 
     private static List<String> normalizeCompanyCodes(List<String> companyCodeList) {
