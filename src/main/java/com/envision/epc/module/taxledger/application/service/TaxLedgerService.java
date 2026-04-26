@@ -18,6 +18,7 @@ import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerParsedDataGateway;
 import com.envision.epc.module.taxledger.application.ledger.LedgerParsedDataGatewayFactory;
+import com.envision.epc.module.taxledger.application.ledger.ParsedResultTypeCatalog;
 import com.envision.epc.module.taxledger.application.ledger.LedgerRenderContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerWorkbookData;
 import com.envision.epc.module.taxledger.application.ledger.LedgerWorkbookDataAssembler;
@@ -1064,6 +1065,9 @@ public class TaxLedgerService {
                 .formulaPolicy("DYNAMIC")
                 .build();
         LedgerBuildOutput output = excelService.buildLedger(workbookData, renderContext);
+        if (output.getBuildReport() != null && buildContext.getPreloadSummary() != null) {
+            output.getBuildReport().put("preloadSummary", buildContext.getPreloadSummary());
+        }
         byte[] finalLedger = output.getWorkbookBytes();
         String blobPath = String.format("tax-ledger/%s/%s/final/%s",
                 ledger.getCompanyCode(), ledger.getYearMonth(), ledger.getLedgerName());
@@ -1109,6 +1113,7 @@ public class TaxLedgerService {
         if (parsedDataGateway == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, "组装 LedgerBuildContext 失败: parsedDataGateway 为空");
         }
+        PreloadOutcome preload = preloadParsedData(safeFiles, parsedDataGateway);
 
         LedgerBuildContext context = LedgerBuildContext.builder()
                 .companyCode(ledger.getCompanyCode())
@@ -1119,16 +1124,82 @@ public class TaxLedgerService {
                 .traceId(String.valueOf(run.getId()))
                 .operator("system")
                 .parsedDataGateway(parsedDataGateway)
+                .preloadedParsedData(preload.preloadedParsedData())
+                .preloadSummary(preload.summary())
                 .build();
-        log.info("ledger context built: runId={}, companyCode={}, yearMonth={}, filesCount={}, taskCount={}, nodeOutputCount={}, snapshotPresent={}",
+        log.info("ledger context built: runId={}, companyCode={}, yearMonth={}, filesCount={}, taskCount={}, nodeOutputCount={}, snapshotPresent={}, preloadTotal={}, preloadSuccess={}, preloadFailed={}, preloadSkipped={}, failedCategories={}",
                 run.getId(),
                 context.getCompanyCode(),
                 context.getYearMonth(),
                 safeFiles.size(),
                 safeTasks.size(),
                 nodeOutputs.size(),
-                snapshot != null);
+                snapshot != null,
+                preload.summary().getOrDefault("preloadTotal", 0),
+                preload.summary().getOrDefault("preloadSuccess", 0),
+                preload.summary().getOrDefault("preloadFailed", 0),
+                preload.summary().getOrDefault("preloadSkipped", 0),
+                preload.summary().getOrDefault("failedCategories", List.of()));
         return context;
+    }
+
+    private PreloadOutcome preloadParsedData(List<FileRecord> files, LedgerParsedDataGateway parsedDataGateway) {
+        Map<FileCategoryEnum, Object> preloaded = new HashMap<>();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        List<String> failedCategories = new ArrayList<>();
+        List<String> skippedCategories = new ArrayList<>();
+
+        Map<FileCategoryEnum, FileRecord> latestByCategory = latestFileByCategory(files);
+        int total = 0;
+        int success = 0;
+        int failed = 0;
+        int skipped = 0;
+
+        for (Map.Entry<FileCategoryEnum, FileRecord> entry : latestByCategory.entrySet()) {
+            FileCategoryEnum category = entry.getKey();
+            FileRecord file = entry.getValue();
+            if (!ParsedResultTypeCatalog.supports(category)) {
+                continue;
+            }
+            if (file == null || file.getParseResultBlobPath() == null || file.getParseResultBlobPath().isBlank()) {
+                skipped++;
+                skippedCategories.add(category.name());
+                continue;
+            }
+            total++;
+            ParsedResultTypeCatalog.Entry type = ParsedResultTypeCatalog.get(category);
+            try {
+                Object value = loadByCatalog(parsedDataGateway, category, type);
+                preloaded.put(category, value);
+                success++;
+            } catch (Exception ex) {
+                failed++;
+                failedCategories.add(category.name());
+                log.warn("preload parsed data failed, category={}, fileId={}, reason={}",
+                        category.name(), file.getId(), ex.getMessage());
+            }
+        }
+
+        summary.put("preloadTotal", total);
+        summary.put("preloadSuccess", success);
+        summary.put("preloadFailed", failed);
+        summary.put("preloadSkipped", skipped);
+        summary.put("failedCategories", failedCategories);
+        summary.put("skippedCategories", skippedCategories);
+        return new PreloadOutcome(preloaded, summary);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object loadByCatalog(LedgerParsedDataGateway gateway,
+                                 FileCategoryEnum category,
+                                 ParsedResultTypeCatalog.Entry type) {
+        if (type == null) {
+            return null;
+        }
+        if (type.shape() == ParsedResultTypeCatalog.Shape.LIST) {
+            return gateway.readParsedList(category, (Class<Object>) type.valueType());
+        }
+        return gateway.readParsedObject(category, (Class<Object>) type.valueType());
     }
 
     private Map<String, Object> loadNodeOutputs(List<LedgerRunTask> tasks) {
@@ -1159,6 +1230,10 @@ public class TaxLedgerService {
             }
             throw ex;
         }
+    }
+
+    private record PreloadOutcome(Map<FileCategoryEnum, Object> preloadedParsedData,
+                                  Map<String, Object> summary) {
     }
 
     private boolean shouldBlockForManual(LedgerRun run, LedgerRunTask task) {

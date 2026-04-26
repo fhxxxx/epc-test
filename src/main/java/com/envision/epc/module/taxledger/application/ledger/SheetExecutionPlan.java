@@ -1,7 +1,10 @@
 package com.envision.epc.module.taxledger.application.ledger;
 
+import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -10,12 +13,7 @@ import java.util.function.Predicate;
  */
 @Component
 public class SheetExecutionPlan {
-    private static final List<PlanItem> PLAN = List.of(
-            new PlanItem(LedgerSheetCode.SUMMARY, companyCode -> true),
-            new PlanItem(LedgerSheetCode.BATCH1_DIRECT, companyCode -> true),
-            new PlanItem(LedgerSheetCode.BATCH2_CUMULATIVE, companyCode -> true),
-            new PlanItem(LedgerSheetCode.BATCH3_SUMMARY_REF, companyCode -> true)
-    );
+    private static final List<PlanItem> PLAN = buildPlan();
 
     public List<LedgerSheetCode> orderedFor(String companyCode) {
         return PLAN.stream()
@@ -28,6 +26,48 @@ public class SheetExecutionPlan {
         return PLAN.stream().map(item -> item.code).toList();
     }
 
+    private static List<PlanItem> buildPlan() {
+        return Arrays.stream(LedgerSheetCode.values())
+                .filter(SheetExecutionPlan::isVisibleBusinessSheet)
+                .sorted(Comparator
+                        .comparingInt(SheetExecutionPlan::priority)
+                        .thenComparingInt(code -> code.getFileCategory().ordinal()))
+                .map(code -> new PlanItem(code, byScope(code)))
+                .toList();
+    }
+
+    private static boolean isVisibleBusinessSheet(LedgerSheetCode code) {
+        FileCategoryEnum category = code.getFileCategory();
+        return category != null
+                && category.isVisibleInFinalLedger()
+                && category.getTargetSheetName() != null;
+    }
+
+    private static int priority(LedgerSheetCode code) {
+        if (code == LedgerSheetCode.BS || code == LedgerSheetCode.PL) {
+            return 0;
+        }
+        if (code == LedgerSheetCode.TAX_ACCOUNTING_DIFFERENCE_MONITOR
+                || code == LedgerSheetCode.UNINVOICED_MONITOR
+                || code == LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355
+                || code == LedgerSheetCode.VAT_CHANGE
+                || code == LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT) {
+            return 2;
+        }
+        if (code == LedgerSheetCode.SUMMARY) {
+            return 3;
+        }
+        return 1;
+    }
+
     private record PlanItem(LedgerSheetCode code, Predicate<String> enabledWhen) {
+    }
+
+    private static Predicate<String> byScope(LedgerSheetCode code) {
+        FileCategoryEnum category = code.getFileCategory();
+        if (category == null) {
+            return companyCode -> true;
+        }
+        return category::isAllowedForCompany;
     }
 }
