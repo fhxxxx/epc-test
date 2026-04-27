@@ -164,15 +164,6 @@ custom:
       domain: https://platform.envision-io.com
       user-id: SYS10470
       app-name: sys.chatenv
-  dify:
-    endpoint: https://ai-agent-dev.envisioncn.com
-    extract-key: app-3E3Mdr4jDemylrGeUSyD7V9l
-  extract:
-    over-time-limit:
-      ocr-task: 2700000
-      ocr-listening-task: 600000
-      extract-task: 300000
-      compare-task: 300000
   wecom:
     agent-id: 1000115
     client-secret: viVw_dH273J3E4gONexDI0ikiUHwCaL3TMGdvJugXgc
@@ -190,10 +181,6 @@ custom:
       account-key: eahQLDDW/Yhn/NLx6N1L9TSIo087ymNw+hfxxV9QdlB3viIFtgwMH38l7rpASQBc0Xvu2qlc/piQ+AStcmf5+g==
       container-name: finance-aiassitant-center-dev
       stg-container-name: finance-aiassistant-stgctr-dev
-    layout:
-      submit-endpoint: https://t-fin-aiassistant.cognitiveservices.azure.com/documentintelligence/documentModels/prebuilt-layout:analyze?_overload=analyzeDocument&api-version=2024-11-30&outputContentFormat=markdown&pages=%s
-      query-endpoint: https://t-fin-aiassistant.cognitiveservices.azure.com/documentintelligence/documentModels/prebuilt-layout/analyzeResults/%s?api-version=2024-11-30
-      key: e0c12cecb2f34739bd325614fcee88fd
   font:
     blob-font: font/
     efs-font: /mnt/efs/fonts/

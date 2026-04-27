@@ -6,9 +6,9 @@ import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.facade.platform.PlatformRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
-import com.envision.epc.module.extract.infrastructure.Constant;
 import com.envision.epc.module.taxledger.application.DatalakeExportAssembler;
 import com.envision.epc.module.taxledger.application.command.DataLakePullCommand;
+import com.envision.epc.module.taxledger.application.constant.DataLakeConstants;
 import com.envision.epc.module.taxledger.application.dto.DataLakeBatchPullResultDTO;
 import com.envision.epc.module.taxledger.application.dto.DatalakeDTO;
 import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
@@ -160,7 +160,7 @@ public class DataLakeService {
         int offset = 0;
         int limit = 5000;
         String reqUrl = platformDomain + CharSequenceUtil.format(
-                Constant.FINANCE_ELECTRONICARCHIVES_REQ_PATH_PATTERN,
+                DataLakeConstants.FINANCE_ELECTRONICARCHIVES_REQ_PATH_PATTERN,
                 companyCode,
                 fiscalYearPeriodStart,
                 fiscalYearPeriodEnd,
@@ -168,7 +168,7 @@ public class DataLakeService {
                 limit
         );
         return platformRemote.fetchFromDataLake(
-                Constant.FINANCE_ELECTRONICARCHIVES_SVC,
+                DataLakeConstants.FINANCE_ELECTRONICARCHIVES_SVC,
                 reqUrl,
                 DatalakeDTO::fromPltData
         );
