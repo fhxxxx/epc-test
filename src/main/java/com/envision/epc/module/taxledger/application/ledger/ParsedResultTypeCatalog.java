@@ -7,7 +7,7 @@ import com.envision.epc.module.taxledger.application.dto.CumulativeTaxSummary232
 import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
-import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
+import com.envision.epc.module.taxledger.application.dto.MonthlySettlementTaxParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendixProjectCompanyUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.PlStatementRowDTO;
@@ -16,9 +16,9 @@ import com.envision.epc.module.taxledger.application.dto.ProjectCumulativePaymen
 import com.envision.epc.module.taxledger.application.dto.StampDutySummaryRowDTO;
 import com.envision.epc.module.taxledger.application.dto.TaxAccountingDifferenceMonitor23202355ItemDTO;
 import com.envision.epc.module.taxledger.application.dto.UninvoicedMonitorItemDTO;
+import com.envision.epc.module.taxledger.application.dto.VatInputCertParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeRowDTO;
-import com.envision.epc.module.taxledger.application.dto.VatInputCertificationItemDTO;
 import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatTableOneCumulativeOutputItemDTO;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
@@ -49,11 +49,11 @@ public final class ParsedResultTypeCatalog {
         registerList(FileCategoryEnum.PL_APPENDIX_PROJECT, PlAppendixProjectCompanyUploadDTO.class);
         registerList(FileCategoryEnum.STAMP_TAX, StampDutySummaryRowDTO.class);
         registerObject(FileCategoryEnum.VAT_OUTPUT, VatOutputSheetUploadDTO.class);
-        registerList(FileCategoryEnum.VAT_INPUT_CERT, VatInputCertificationItemDTO.class);
+        registerObject(FileCategoryEnum.VAT_INPUT_CERT, VatInputCertParsedDTO.class);
         registerObject(FileCategoryEnum.CUMULATIVE_PROJECT_TAX, Object.class);
         registerObject(FileCategoryEnum.VAT_CHANGE_APPENDIX, VatChangeAppendixUploadDTO.class);
         registerList(FileCategoryEnum.CONTRACT_STAMP_DUTY_LEDGER, ContractStampDutyLedgerItemDTO.class);
-        registerList(FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlyTaxSectionDTO.class);
+        registerObject(FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlySettlementTaxParsedDTO.class);
         registerObject(FileCategoryEnum.PREINVOICE_ACCRUAL_REVERSAL_2320_2355, Object.class);
         registerObject(FileCategoryEnum.PROJECT_CUMULATIVE_DECLARATION, ProjectCumulativeDeclarationSheetDTO.class);
         registerObject(FileCategoryEnum.PROJECT_CUMULATIVE_PAYMENT, ProjectCumulativePaymentSheetDTO.class);

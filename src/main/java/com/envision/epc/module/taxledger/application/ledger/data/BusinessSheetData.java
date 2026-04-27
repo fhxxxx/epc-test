@@ -1,5 +1,7 @@
 package com.envision.epc.module.taxledger.application.ledger.data;
 
+import com.aspose.cells.Workbook;
+import com.aspose.cells.Worksheet;
 import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.BsStatementRowDTO;
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
@@ -14,8 +16,6 @@ import com.envision.epc.module.taxledger.application.dto.TaxAccountingDifference
 import com.envision.epc.module.taxledger.application.dto.UninvoicedMonitorItemDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeRowDTO;
-import com.envision.epc.module.taxledger.application.dto.VatInputCertificationItemDTO;
-import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatTableOneCumulativeOutputItemDTO;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetData;
@@ -86,12 +86,52 @@ public final class BusinessSheetData {
         public StampTaxProject(List<StampDutySummaryRowDTO> payload) { super(LedgerSheetCode.STAMP_TAX_PROJECT, payload); }
     }
 
-    public static final class VatOutput extends ParsedSheetData<VatOutputSheetUploadDTO> {
-        public VatOutput(VatOutputSheetUploadDTO payload) { super(LedgerSheetCode.VAT_OUTPUT, payload); }
+    @Getter
+    public abstract static class SourceSheetData implements LedgerSheetData {
+        private final LedgerSheetCode sheetCode;
+        private final Workbook sourceWorkbook;
+        private final String sourceSheetName;
+
+        protected SourceSheetData(LedgerSheetCode sheetCode, Workbook sourceWorkbook, String sourceSheetName) {
+            this.sheetCode = sheetCode;
+            this.sourceWorkbook = sourceWorkbook;
+            this.sourceSheetName = sourceSheetName;
+        }
+
+        @Override
+        public LedgerSheetCode sheetCode() {
+            return sheetCode;
+        }
+
+        @Override
+        public Integer rowCount() {
+            if (sourceWorkbook == null || sourceSheetName == null || sourceSheetName.isBlank()) {
+                return 0;
+            }
+            Worksheet source;
+            try {
+                source = sourceWorkbook.getWorksheets().get(sourceSheetName);
+            } catch (Exception ignore) {
+                return 0;
+            }
+            if (source == null) {
+                return 0;
+            }
+            int maxDataRow = source.getCells().getMaxDataRow();
+            return Math.max(maxDataRow + 1, 0);
+        }
     }
 
-    public static final class VatInputCert extends ParsedSheetData<List<VatInputCertificationItemDTO>> {
-        public VatInputCert(List<VatInputCertificationItemDTO> payload) { super(LedgerSheetCode.VAT_INPUT_CERT, payload); }
+    public static final class VatOutputSource extends SourceSheetData {
+        public VatOutputSource(Workbook sourceWorkbook, String sourceSheetName) {
+            super(LedgerSheetCode.VAT_OUTPUT, sourceWorkbook, sourceSheetName);
+        }
+    }
+
+    public static final class VatInputCertSource extends SourceSheetData {
+        public VatInputCertSource(Workbook sourceWorkbook, String sourceSheetName) {
+            super(LedgerSheetCode.VAT_INPUT_CERT, sourceWorkbook, sourceSheetName);
+        }
     }
 
     public static final class CumulativeProjectTax extends ParsedSheetData<Object> {

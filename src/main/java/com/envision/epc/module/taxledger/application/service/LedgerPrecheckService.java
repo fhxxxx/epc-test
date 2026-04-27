@@ -5,7 +5,7 @@ import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.application.dto.CumulativeTaxSummary23202355ColumnDTO;
-import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
+import com.envision.epc.module.taxledger.application.dto.MonthlySettlementTaxParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
 import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.ProjectCumulativeDeclarationSheetDTO;
@@ -115,9 +115,9 @@ public class LedgerPrecheckService {
             }
             PlAppendix23202355DTO uploaded =
                     parsedResultReader.readParsedData(n30File.getParseResultBlobPath(), PlAppendix23202355DTO.class);
-            List<MonthlyTaxSectionDTO> monthlyRows =
-                    parsedResultReader.readParsedList(monthlyFile.getParseResultBlobPath(), MonthlyTaxSectionDTO.class);
-            TaxLedgerService.N30ValidationResult validated = taxLedgerService.validateAndNormalizeN30(uploaded, monthlyRows);
+            MonthlySettlementTaxParsedDTO monthly =
+                    parsedResultReader.readParsedData(monthlyFile.getParseResultBlobPath(), MonthlySettlementTaxParsedDTO.class);
+            TaxLedgerService.N30ValidationResult validated = taxLedgerService.validateAndNormalizeN30(uploaded, monthly);
             snapshot.setN30NormalizedData(validated.getData());
             snapshot.setValidationDetails(validated.getValidationDetails());
         }

@@ -40,12 +40,12 @@ class StampTaxProjectSheetRenderer extends AbstractParsedBusinessSheetRenderer<B
 }
 
 @Component
-class VatOutputSheetRenderer extends AbstractParsedBusinessSheetRenderer<BusinessSheetData.VatOutput> {
+class VatOutputSheetRenderer extends AbstractSourceSheetCopyRenderer<BusinessSheetData.VatOutputSource> {
     @Override protected LedgerSheetCode code() { return LedgerSheetCode.VAT_OUTPUT; }
 }
 
 @Component
-class VatInputCertSheetRenderer extends AbstractParsedBusinessSheetRenderer<BusinessSheetData.VatInputCert> {
+class VatInputCertSheetRenderer extends AbstractSourceSheetCopyRenderer<BusinessSheetData.VatInputCertSource> {
     @Override protected LedgerSheetCode code() { return LedgerSheetCode.VAT_INPUT_CERT; }
 }
 

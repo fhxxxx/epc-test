@@ -14,8 +14,6 @@ import com.envision.epc.module.taxledger.application.dto.TaxAccountingDifference
 import com.envision.epc.module.taxledger.application.dto.UninvoicedMonitorItemDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeRowDTO;
-import com.envision.epc.module.taxledger.application.dto.VatInputCertificationItemDTO;
-import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatTableOneCumulativeOutputItemDTO;
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
@@ -80,18 +78,24 @@ class StampTaxProjectSheetDataBuilder extends AbstractParsedBusinessSheetDataBui
 }
 
 @Component
-class VatOutputSheetDataBuilder extends AbstractParsedBusinessSheetDataBuilder<BusinessSheetData.VatOutput> {
+class VatOutputSheetDataBuilder extends AbstractParsedBusinessSheetDataBuilder<BusinessSheetData.VatOutputSource> {
     @Override protected LedgerSheetCode code() { return LedgerSheetCode.VAT_OUTPUT; }
-    @Override public BusinessSheetData.VatOutput build(LedgerBuildContext ctx) {
-        return new BusinessSheetData.VatOutput(readObject(ctx, FileCategoryEnum.VAT_OUTPUT, VatOutputSheetUploadDTO.class));
+    @Override public BusinessSheetData.VatOutputSource build(LedgerBuildContext ctx) {
+        return new BusinessSheetData.VatOutputSource(
+                ctx.getParsedDataGateway().openSourceWorkbook(FileCategoryEnum.VAT_OUTPUT),
+                FileCategoryEnum.VAT_OUTPUT.getTargetSheetName()
+        );
     }
 }
 
 @Component
-class VatInputCertSheetDataBuilder extends AbstractParsedBusinessSheetDataBuilder<BusinessSheetData.VatInputCert> {
+class VatInputCertSheetDataBuilder extends AbstractParsedBusinessSheetDataBuilder<BusinessSheetData.VatInputCertSource> {
     @Override protected LedgerSheetCode code() { return LedgerSheetCode.VAT_INPUT_CERT; }
-    @Override public BusinessSheetData.VatInputCert build(LedgerBuildContext ctx) {
-        return new BusinessSheetData.VatInputCert(readList(ctx, FileCategoryEnum.VAT_INPUT_CERT, VatInputCertificationItemDTO.class));
+    @Override public BusinessSheetData.VatInputCertSource build(LedgerBuildContext ctx) {
+        return new BusinessSheetData.VatInputCertSource(
+                ctx.getParsedDataGateway().openSourceWorkbook(FileCategoryEnum.VAT_INPUT_CERT),
+                FileCategoryEnum.VAT_INPUT_CERT.getTargetSheetName()
+        );
     }
 }
 

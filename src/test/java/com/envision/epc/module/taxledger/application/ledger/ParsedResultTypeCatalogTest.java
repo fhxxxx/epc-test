@@ -4,6 +4,8 @@ import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.MonthlySettlementTaxParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.VatInputCertParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
@@ -31,6 +33,16 @@ class ParsedResultTypeCatalogTest {
         assertNotNull(vatChangeAppendix);
         assertEquals(ParsedResultTypeCatalog.Shape.OBJECT, vatChangeAppendix.shape());
         assertEquals(VatChangeAppendixUploadDTO.class, vatChangeAppendix.valueType());
+
+        ParsedResultTypeCatalog.Entry vatInputCert = ParsedResultTypeCatalog.get(FileCategoryEnum.VAT_INPUT_CERT);
+        assertNotNull(vatInputCert);
+        assertEquals(ParsedResultTypeCatalog.Shape.OBJECT, vatInputCert.shape());
+        assertEquals(VatInputCertParsedDTO.class, vatInputCert.valueType());
+
+        ParsedResultTypeCatalog.Entry monthlySettlement = ParsedResultTypeCatalog.get(FileCategoryEnum.MONTHLY_SETTLEMENT_TAX);
+        assertNotNull(monthlySettlement);
+        assertEquals(ParsedResultTypeCatalog.Shape.OBJECT, monthlySettlement.shape());
+        assertEquals(MonthlySettlementTaxParsedDTO.class, monthlySettlement.valueType());
 
         ParsedResultTypeCatalog.Entry dlIncome = ParsedResultTypeCatalog.get(FileCategoryEnum.DL_INCOME);
         assertNotNull(dlIncome);

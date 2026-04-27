@@ -2,9 +2,9 @@ package com.envision.epc.module.taxledger.application.ledger.builder;
 
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
+import com.envision.epc.module.taxledger.application.ledger.LedgerSheetData;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetDataBuilder;
 import com.envision.epc.module.taxledger.application.ledger.ParsedResultTypeCatalog;
-import com.envision.epc.module.taxledger.application.ledger.data.BusinessSheetData;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
 
@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * 真实业务 Sheet Builder 基类（预加载优先，网关回退）
  */
-public abstract class AbstractParsedBusinessSheetDataBuilder<T extends BusinessSheetData.ParsedSheetData<?>>
+public abstract class AbstractParsedBusinessSheetDataBuilder<T extends LedgerSheetData>
         implements LedgerSheetDataBuilder<T> {
 
     protected abstract LedgerSheetCode code();

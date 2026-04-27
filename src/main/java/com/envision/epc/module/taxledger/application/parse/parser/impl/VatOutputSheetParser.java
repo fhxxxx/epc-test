@@ -40,7 +40,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
     @Override
     public ParseResult<VatOutputSheetUploadDTO> parse(InputStream inputStream, ParseContext context) {
         VatOutputSheetUploadDTO data = new VatOutputSheetUploadDTO();
-        data.setInvoiceDetails(new ArrayList<>());
+        data.setInvoiceDetails(List.of());
         data.setTaxRateSummaries(new ArrayList<>());
 
         ParseResult<VatOutputSheetUploadDTO> result = ParseResult.<VatOutputSheetUploadDTO>builder().data(data).build();
@@ -75,70 +75,20 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
             return result;
         }
 
-        int section1HeaderIdx = findHeaderRow(rows, List.of("序号", "数电发票号码", "税收分类编码"));
         int section2HeaderIdx = findHeaderRow(rows, List.of("税率/征收率", "开具蓝字发票金额", "作废红字发票税额"));
         int section2TitleIdx = findHeaderRow(rows, List.of("按税率（征收率）统计表"));
-        if (section1HeaderIdx < 0) {
-            result.addIssue("增值税销项：未识别到发票明细表头");
-            return result;
-        }
         if (section2HeaderIdx < 0) {
             result.addIssue("增值税销项：未识别到按税率统计表头");
-            return result;
-        }
-        if (section2HeaderIdx <= section1HeaderIdx) {
-            result.addIssue("增值税销项：表结构异常，统计表头位置错误");
             return result;
         }
         if (section2TitleIdx < 0 || section2TitleIdx > section2HeaderIdx) {
             section2TitleIdx = section2HeaderIdx;
         }
 
-        Map<String, Integer> section1Cols = buildHeaderIndex(rows.get(section1HeaderIdx));
         Map<String, Integer> section2Cols = buildHeaderIndex(rows.get(section2HeaderIdx));
 
-        parseSection1(rows, section1HeaderIdx + 1, section2TitleIdx - 1, section1Cols, data);
         parseSection2(rows, section2HeaderIdx + 1, rows.size() - 1, section2Cols, data);
         return result;
-    }
-
-    private static void parseSection1(List<Map<Integer, String>> rows,
-                                      int startIdx,
-                                      int endIdx,
-                                      Map<String, Integer> cols,
-                                      VatOutputSheetUploadDTO target) {
-        Integer serialNoCol = cols.get("序号");
-        Integer digitalInvoiceNoCol = cols.get("数电发票号码");
-        Integer sellerTaxpayerIdCol = cols.get("销方识别号");
-        Integer sellerNameCol = cols.get("销方名称");
-        Integer buyerTaxpayerIdCol = cols.get("购方识别号");
-        Integer buyerNameCol = firstPresent(cols, "购买方名称", "购方名称");
-        Integer invoiceDateCol = cols.get("开票日期");
-        Integer taxClassificationCodeCol = cols.get("税收分类编码");
-        Integer specificBusinessTypeCol = cols.get("特定业务类型");
-        Integer invoiceCodeCol = cols.get("发票代码");
-        Integer invoiceNoCol = cols.get("发票号码");
-
-        for (int i = startIdx; i <= endIdx && i < rows.size(); i++) {
-            Map<Integer, String> row = rows.get(i);
-            if (isBlankRow(row)) {
-                continue;
-            }
-
-            VatOutputSheetUploadDTO.InvoiceDetailItem item = new VatOutputSheetUploadDTO.InvoiceDetailItem();
-            item.setSerialNo(get(row, serialNoCol));
-            item.setInvoiceCode(get(row, invoiceCodeCol));
-            item.setInvoiceNo(get(row, invoiceNoCol));
-            item.setDigitalInvoiceNo(get(row, digitalInvoiceNoCol));
-            item.setSellerTaxpayerId(get(row, sellerTaxpayerIdCol));
-            item.setSellerName(get(row, sellerNameCol));
-            item.setBuyerTaxpayerId(get(row, buyerTaxpayerIdCol));
-            item.setBuyerName(get(row, buyerNameCol));
-            item.setInvoiceDate(get(row, invoiceDateCol));
-            item.setTaxClassificationCode(get(row, taxClassificationCodeCol));
-            item.setSpecificBusinessType(get(row, specificBusinessTypeCol));
-            target.getInvoiceDetails().add(item);
-        }
     }
 
     private static void parseSection2(List<Map<Integer, String>> rows,

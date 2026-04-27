@@ -9,7 +9,7 @@ import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedger
 import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
-import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
+import com.envision.epc.module.taxledger.application.dto.MonthlySettlementTaxParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.PlStatementRowDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
@@ -427,8 +427,8 @@ public class TaxLedgerService {
         }
 
         PrecheckSnapshotDTO snapshot = loadPrecheckSnapshot(run.getId());
-        List<MonthlyTaxSectionDTO> monthlyRows = readRequiredParsedList(snapshot, FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlyTaxSectionDTO.class);
-        N30ValidationResult validated = validateAndNormalizeN30(uploaded, monthlyRows);
+        MonthlySettlementTaxParsedDTO monthly = readRequiredParsedObject(snapshot, FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlySettlementTaxParsedDTO.class);
+        N30ValidationResult validated = validateAndNormalizeN30(uploaded, monthly);
 
         Map<String, Object> sourceFile = new LinkedHashMap<>();
         sourceFile.put("fileId", parsedFile.getId());
@@ -567,7 +567,7 @@ public class TaxLedgerService {
         return category.getDisplayName();
     }
 
-    public N30ValidationResult validateAndNormalizeN30(PlAppendix23202355DTO uploaded, List<MonthlyTaxSectionDTO> monthlyRows) {
+    public N30ValidationResult validateAndNormalizeN30(PlAppendix23202355DTO uploaded, MonthlySettlementTaxParsedDTO monthly) {
         List<PlAppendix23202355DTO.InvoicingSplitItem> section1 =
                 uploaded.getInvoicingSplitList() == null ? new ArrayList<>() : new ArrayList<>(uploaded.getInvoicingSplitList());
         List<PlAppendix23202355DTO.DeclarationSplitItem> section2 =
@@ -604,8 +604,8 @@ public class TaxLedgerService {
         for (String key : sec2Map.keySet()) {
             if (key.startsWith("专票-")) {
                 String rate = key.substring("专票-".length());
-                sec2Map.get(key).setDeclaredAmount(sumMonthlyByRate(monthlyRows, rate, MonthlyField.INCOME));
-                sec2Map.get(key).setDeclaredTaxAmount(sumMonthlyByRate(monthlyRows, rate, MonthlyField.OUTPUT_TAX));
+                sec2Map.get(key).setDeclaredAmount(sumMonthlyByRate(monthly, rate, MonthlyField.INCOME));
+                sec2Map.get(key).setDeclaredTaxAmount(sumMonthlyByRate(monthly, rate, MonthlyField.OUTPUT_TAX));
             }
         }
 
@@ -614,8 +614,8 @@ public class TaxLedgerService {
             PlAppendix23202355DTO.DeclarationSplitItem s2 = sec2Map.get(key);
             if (key.startsWith("专票-")) {
                 String rate = key.substring("专票-".length());
-                s1.setInvoicedIncome(sumMonthlyByRate(monthlyRows, rate, MonthlyField.INVOICED_INCOME));
-                s1.setInvoicedOutputTax(sumMonthlyByRate(monthlyRows, rate, MonthlyField.INVOICED_TAX_AMOUNT));
+                s1.setInvoicedIncome(sumMonthlyByRate(monthly, rate, MonthlyField.INVOICED_INCOME));
+                s1.setInvoicedOutputTax(sumMonthlyByRate(monthly, rate, MonthlyField.INVOICED_TAX_AMOUNT));
                 s1.setUninvoicedIncome(subtract(s2.getDeclaredAmount(), s1.getInvoicedIncome()));
                 s1.setOutputTax(subtract(s2.getDeclaredTaxAmount(), s1.getInvoicedOutputTax()));
             }
@@ -696,24 +696,20 @@ public class TaxLedgerService {
         return matcher.group(1) + "%";
     }
 
-    private BigDecimal sumMonthlyByRate(List<MonthlyTaxSectionDTO> monthlyRows, String rate, MonthlyField field) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (MonthlyTaxSectionDTO row : monthlyRows) {
-            if (row == null) {
-                continue;
-            }
-            String title = normalizeText(row.getTitle());
-            if (title == null || !title.contains(rate)) {
-                continue;
-            }
-            sum = add(sum, switch (field) {
-                case INCOME -> row.getIncome();
-                case OUTPUT_TAX -> row.getOutputTax();
-                case INVOICED_INCOME -> row.getInvoicedIncome();
-                case INVOICED_TAX_AMOUNT -> row.getInvoicedTaxAmount();
-            });
+    private BigDecimal sumMonthlyByRate(MonthlySettlementTaxParsedDTO monthly, String rate, MonthlyField field) {
+        if (monthly == null || monthly.getAggregateByRate() == null || rate == null) {
+            return BigDecimal.ZERO;
         }
-        return sum;
+        MonthlySettlementTaxParsedDTO.RateAggregate aggregate = monthly.getAggregateByRate().get(rate);
+        if (aggregate == null) {
+            return BigDecimal.ZERO;
+        }
+        return switch (field) {
+            case INCOME -> nvl(aggregate.getIncomeSum());
+            case OUTPUT_TAX -> nvl(aggregate.getOutputTaxSum());
+            case INVOICED_INCOME -> nvl(aggregate.getInvoicedIncomeSum());
+            case INVOICED_TAX_AMOUNT -> nvl(aggregate.getInvoicedTaxAmountSum());
+        };
     }
 
     private Map<String, Object> buildStampDutyPrecompute(String companyCode, String yearMonth, PrecheckSnapshotDTO snapshot) {
