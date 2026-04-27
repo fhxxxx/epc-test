@@ -6,7 +6,7 @@ import com.envision.epc.module.taxledger.application.ledger.LedgerSheetData;
 import lombok.Value;
 
 /**
- * Summary 页数据
+ * Summary表 页数据
  */
 @Value
 public class SummaryLedgerSheetData implements LedgerSheetData {

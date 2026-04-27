@@ -1030,6 +1030,10 @@ public class TaxLedgerService {
         return BigDecimal.ZERO.compareTo(value) == 0 ? null : value;
     }
 
+    private BigDecimal nvl(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
     private void finalizeRunSuccess(LedgerRun run, LedgerRecord ledger) throws Exception {
         List<FileRecord> files = loadFiles(ledger.getCompanyCode(), ledger.getYearMonth());
         List<LedgerRunTask> tasks = loadTasks(run.getId());

@@ -44,6 +44,9 @@ public enum LedgerSheetCode {
     }
 
     public SheetGenerationMode getMode() {
-        return SheetGenerationMode.COMPUTED;
+        return switch (this) {
+            case VAT_OUTPUT, VAT_INPUT_CERT -> SheetGenerationMode.COPY_FROM_SOURCE;
+            default -> SheetGenerationMode.COMPUTED;
+        };
     }
 }
