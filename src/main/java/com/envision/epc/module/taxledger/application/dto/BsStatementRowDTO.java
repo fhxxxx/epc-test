@@ -16,12 +16,11 @@ public class BsStatementRowDTO {
     @ExcelProperty("行")
     private String lineNo;
 
-    /** 期末余额 */
-    @ExcelProperty("期末余额")
-    private BigDecimal endingBalance;
+    /** 年初数 */
+    @ExcelProperty("年初数")
+    private BigDecimal yearStartAmount;
 
-    /** 年初余额 */
-    @ExcelProperty("年初余额")
-    private BigDecimal beginningBalance;
+    /** 累计发生数 */
+    @ExcelProperty("累计发生数")
+    private BigDecimal accumulatedAmount;
 }
-

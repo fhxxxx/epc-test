@@ -49,7 +49,8 @@ public class SheetExecutionPlan {
     }
 
     private static boolean isVisibleBusinessSheet(LedgerSheetCode code) {
-        if (code == LedgerSheetCode.BS_APPENDIX) {
+        if (code == LedgerSheetCode.BS_APPENDIX
+                || code == LedgerSheetCode.VAT_CHANGE_APPENDIX) {
             return false;
         }
         FileCategoryEnum category = code.getFileCategory();

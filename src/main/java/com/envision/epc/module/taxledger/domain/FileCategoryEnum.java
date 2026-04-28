@@ -20,7 +20,7 @@ public enum FileCategoryEnum {
     PREINVOICE_ACCRUAL_REVERSAL_2320_2355("预开票收入计提及冲回统计（2320、2355）", true, false, "预开票收入计提及冲回统计（2320、2355）", FileCategoryScopeEnum.RJJC_2320_2355),
     PROJECT_CUMULATIVE_DECLARATION("项目累计申报", false, true, "项目累计申报", FileCategoryScopeEnum.ALL),
     PROJECT_CUMULATIVE_PAYMENT("项目累计缴纳", false, true, "项目累计缴纳", FileCategoryScopeEnum.ALL),
-    SUMMARY("summary表", false, true, "Summary ", FileCategoryScopeEnum.ALL),
+    SUMMARY("summary表", false, true, "Summary", FileCategoryScopeEnum.ALL),
     CUMULATIVE_TAX_SUMMARY_2320_2355("累计税金汇总表-2320、2355", false, true, "累计税金汇总表-2320、2355", FileCategoryScopeEnum.RJJC_2320_2355),
     VAT_CHANGE("增值税变动表", false, true, "增值税变动表", FileCategoryScopeEnum.ALL),
     VAT_TABLE_ONE_CUMULATIVE_OUTPUT("增值税表一 累计销项-2320、2355", false, true, "增值税表一 累计销项-2320、2355", FileCategoryScopeEnum.RJJC_2320_2355),

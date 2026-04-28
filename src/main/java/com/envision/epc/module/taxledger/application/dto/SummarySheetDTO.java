@@ -14,9 +14,6 @@ public class SummarySheetDTO {
     /** 台账期间（如2025-02） */
     private String ledgerPeriod;
 
-    /** 申报日期 */
-    private String declarationDate;
-
     /** 印花税分段 */
     private List<StampDutyItem> stampDutyRows;
 
@@ -84,7 +81,9 @@ public class SummarySheetDTO {
     @Data
     public static class FinalTotalItem {
         private String totalTitle;
+        /** 兼容保留：渲染时不使用，最终合计由公式生成 */
         private BigDecimal declaredTotal;
+        /** 兼容保留：渲染时不使用，最终合计由公式生成 */
         private BigDecimal bookTotal;
     }
 }

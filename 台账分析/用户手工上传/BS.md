@@ -30,7 +30,13 @@
 ### 3.1 必需输入
 
 - 当期 `BS` 上传文件（`FileCategoryEnum.BS`）
-- 当期 `BS附表` 上传文件（`FileCategoryEnum.BS_APPENDIX`）
+- 当期 `BS附表` 上传文件（`FileCategoryEnum.BS_APPENDIX_TAX_PAYABLE`）
+
+补充口径（金额列）：
+
+- BS 原件金额列按业务口径理解为：`年初数`、`累计发生数`。
+- 对应 DTO 字段：`yearStartAmount`（年初数）、`accumulatedAmount`（累计发生数）。
+- 后续若需用于“应交税费”相关计算，按口径使用：`(累计发生数 - 年初数) * -1`。
 
 ### 3.2 前序底座选择规则（仅非首构建场景）
 
@@ -85,7 +91,7 @@
 ## 6. 实现映射（代码口径）
 
 - `BsSheetDataBuilder`
-  - 负责准备 `BS` 与 `BS附表` 原件字节、前序底座字节、渲染模式与目标 sheet 名。
+  - 负责准备 `BS` 与 `BS附表` 原件 `blobPath`、前序底座 `blobPath`、渲染模式与目标 sheet 名。
 - `BsLedgerSheetData`
   - 承载渲染输入（`FIRST_BUILD / APPEND_ON_PREVIOUS` 等）。
 - `BsSheetRenderer`

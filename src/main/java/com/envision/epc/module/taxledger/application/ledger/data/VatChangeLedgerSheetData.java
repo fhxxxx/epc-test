@@ -10,6 +10,8 @@ import com.envision.epc.module.taxledger.application.dto.VatChangeRowDTO;
  * 增值税变动表 页数据。
  */
 public class VatChangeLedgerSheetData implements LedgerSheetData {
+    String appendixBlobPath;
+    String appendixSheetName;
     List<VatChangeRowDTO> payload;
     @Override
     public LedgerSheetCode sheetCode() {

@@ -85,8 +85,8 @@ public class BsSheetParser implements SheetParser<List<BsStatementRowDTO>> {
         BsStatementRowDTO row = new BsStatementRowDTO();
         row.setLineNo(lineNoText);
         row.setItemName(normalize(getCellText(cells, rowIdx, baseCol)));
-        row.setEndingBalance(parseAmount(cells, rowIdx, baseCol + 2));
-        row.setBeginningBalance(parseAmount(cells, rowIdx, baseCol + 3));
+        row.setYearStartAmount(parseAmount(cells, rowIdx, baseCol + 2));
+        row.setAccumulatedAmount(parseAmount(cells, rowIdx, baseCol + 3));
         return row;
     }
 
@@ -103,11 +103,11 @@ public class BsSheetParser implements SheetParser<List<BsStatementRowDTO>> {
         if (isBlank(existing.getItemName()) && !isBlank(incoming.getItemName())) {
             existing.setItemName(incoming.getItemName());
         }
-        if (existing.getEndingBalance() == null && incoming.getEndingBalance() != null) {
-            existing.setEndingBalance(incoming.getEndingBalance());
+        if (existing.getYearStartAmount() == null && incoming.getYearStartAmount() != null) {
+            existing.setYearStartAmount(incoming.getYearStartAmount());
         }
-        if (existing.getBeginningBalance() == null && incoming.getBeginningBalance() != null) {
-            existing.setBeginningBalance(incoming.getBeginningBalance());
+        if (existing.getAccumulatedAmount() == null && incoming.getAccumulatedAmount() != null) {
+            existing.setAccumulatedAmount(incoming.getAccumulatedAmount());
         }
     }
 
