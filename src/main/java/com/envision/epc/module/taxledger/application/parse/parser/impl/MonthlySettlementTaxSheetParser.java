@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcelFactory;
 import com.alibaba.excel.context.AnalysisContext;
 import com.alibaba.excel.event.AnalysisEventListener;
 import com.envision.epc.module.taxledger.application.dto.MonthlySettlementTaxParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.MonthlyTaxSectionDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.ParserValueUtils;
@@ -12,6 +13,8 @@ import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -87,23 +90,23 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<MonthlySettl
             return result;
         }
 
+        List<MonthlyTaxSectionDTO> sections = new ArrayList<>();
         for (Integer startCol : sectionStartCols) {
             String title = findSectionTitle(titleRow, startCol);
             String taxRate = extractTaxRate(title);
-            if (!StringUtils.hasText(taxRate)) {
-                result.addIssue("睿景景程月结数据表-报税：分段标题无法提取税率，title=" + normalize(title));
-                continue;
-            }
-            parseSectionRows(rows, dataStartRowIndex, startCol, taxRate, data);
+            parseSectionRows(rows, dataStartRowIndex, startCol, title, taxRate, sections);
         }
+        data.setSections(sections);
+        buildAggregateFromSections(sections, data, result);
         return result;
     }
 
     private static void parseSectionRows(List<Map<Integer, String>> rows,
                                          int dataStartRowIndex,
                                          int startCol,
+                                         String title,
                                          String taxRate,
-                                         MonthlySettlementTaxParsedDTO target) {
+                                         List<MonthlyTaxSectionDTO> sections) {
         boolean started = false;
         for (int rowIndex = dataStartRowIndex; rowIndex < rows.size(); rowIndex++) {
             Map<Integer, String> row = rows.get(rowIndex);
@@ -126,41 +129,114 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<MonthlySettl
                 continue;
             }
             started = true;
-            if (isTotalRow(costRaw)) {
+            boolean totalRow = isTotalRow(costRaw)
+                    || isTotalRow(normalize(row.get(LEADING_COL_START)))
+                    || isTotalRow(normalize(row.get(LEADING_COL_START + 1)))
+                    || isTotalRow(normalize(row.get(LEADING_COL_START + 2)));
+
+            MonthlyTaxSectionDTO section = new MonthlyTaxSectionDTO();
+            section.setTitle(title);
+            section.setTaxRate(taxRate);
+            section.setCost(ParserValueUtils.toBigDecimal(costRaw));
+            section.setIncome(ParserValueUtils.toBigDecimal(incomeRaw));
+            section.setOutputTax(ParserValueUtils.toBigDecimal(outputTaxRaw));
+            section.setInvoicedIncome(ParserValueUtils.toBigDecimal(invoicedIncomeRaw));
+            section.setInvoicedTaxAmount(ParserValueUtils.toBigDecimal(invoicedTaxAmountRaw));
+            section.setUninvoicedIncome(ParserValueUtils.toBigDecimal(uninvoicedIncomeRaw));
+            section.setUninvoicedTaxAmount(ParserValueUtils.toBigDecimal(uninvoicedTaxAmountRaw));
+            section.setTotalRow(totalRow);
+            sections.add(section);
+        }
+    }
+
+    private static void buildAggregateFromSections(List<MonthlyTaxSectionDTO> sections,
+                                                   MonthlySettlementTaxParsedDTO target,
+                                                   ParseResult<MonthlySettlementTaxParsedDTO> result) {
+        if (sections == null || sections.isEmpty()) {
+            return;
+        }
+        for (MonthlyTaxSectionDTO section : sections) {
+            if (section == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(section.getTotalRow())) {
+                continue;
+            }
+            String taxRate = normalizeTaxRateFromSection(section);
+            if (!StringUtils.hasText(taxRate)) {
+                result.addIssue("睿景景程月结数据表-报税：分段标题无法提取税率，title=" + normalize(section.getTitle()));
                 continue;
             }
             MonthlySettlementTaxParsedDTO.RateAggregate aggregate =
                     target.getAggregateByRate().computeIfAbsent(taxRate, key -> new MonthlySettlementTaxParsedDTO.RateAggregate());
-            aggregate.setIncomeSum(sum(aggregate.getIncomeSum(), ParserValueUtils.toBigDecimal(incomeRaw)));
-            aggregate.setOutputTaxSum(sum(aggregate.getOutputTaxSum(), ParserValueUtils.toBigDecimal(outputTaxRaw)));
-            aggregate.setInvoicedIncomeSum(sum(aggregate.getInvoicedIncomeSum(), ParserValueUtils.toBigDecimal(invoicedIncomeRaw)));
-            aggregate.setInvoicedTaxAmountSum(sum(aggregate.getInvoicedTaxAmountSum(), ParserValueUtils.toBigDecimal(invoicedTaxAmountRaw)));
+            aggregate.setIncomeSum(sum(aggregate.getIncomeSum(), section.getIncome()));
+            aggregate.setOutputTaxSum(sum(aggregate.getOutputTaxSum(), section.getOutputTax()));
+            aggregate.setInvoicedIncomeSum(sum(aggregate.getInvoicedIncomeSum(), section.getInvoicedIncome()));
+            aggregate.setInvoicedTaxAmountSum(sum(aggregate.getInvoicedTaxAmountSum(), section.getInvoicedTaxAmount()));
         }
+    }
+
+    private static String normalizeTaxRateFromSection(MonthlyTaxSectionDTO section) {
+        if (section == null) {
+            return null;
+        }
+        String rate = normalizeTaxRate(section.getTaxRate());
+        if (StringUtils.hasText(rate)) {
+            return rate;
+        }
+        return extractTaxRate(section.getTitle());
     }
 
     private List<Map<Integer, String>> readRows(InputStream inputStream,
                                                 ParseResult<MonthlySettlementTaxParsedDTO> result) {
-        List<Map<Integer, String>> rows = new ArrayList<>();
+        byte[] bytes;
         try {
-            EasyExcelFactory.read(inputStream, new AnalysisEventListener<Map<Integer, String>>() {
-                        @Override
-                        public void invoke(Map<Integer, String> rowData, AnalysisContext analysisContext) {
-                            rows.add(new HashMap<>(rowData));
-                        }
-
-                        @Override
-                        public void doAfterAllAnalysed(AnalysisContext analysisContext) {
-                            // no-op
-                        }
-                    })
-                    .headRowNumber(0)
-                    .sheet(category().getTargetSheetName())
-                    .doRead();
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            inputStream.transferTo(output);
+            bytes = output.toByteArray();
         } catch (Exception e) {
-            result.addIssue("睿景景程月结数据表-报税：读取Excel失败 - " + e.getMessage());
+            result.addIssue("睿景景程月结数据表-报税：读取文件流失败 - " + e.getMessage());
             return List.of();
         }
-        return rows;
+
+        String targetSheetName = category().getTargetSheetName();
+        List<Map<Integer, String>> rowsByName = readRowsFromSheet(new ByteArrayInputStream(bytes), targetSheetName);
+        if (!rowsByName.isEmpty()) {
+            return rowsByName;
+        }
+
+        List<Map<Integer, String>> rowsFromFirst = readRowsFromSheet(new ByteArrayInputStream(bytes), null);
+        if (rowsFromFirst.isEmpty()) {
+            result.addIssue("睿景景程月结数据表-报税：按sheet名与首sheet均未读取到数据");
+        }
+        return rowsFromFirst;
+    }
+
+    private List<Map<Integer, String>> readRowsFromSheet(InputStream inputStream,
+                                                         String sheetName) {
+        List<Map<Integer, String>> rows = new ArrayList<>();
+        try {
+            var readerBuilder = EasyExcelFactory.read(inputStream, new AnalysisEventListener<Map<Integer, String>>() {
+                @Override
+                public void invoke(Map<Integer, String> rowData, AnalysisContext analysisContext) {
+                    rows.add(new HashMap<>(rowData));
+                }
+
+                @Override
+                public void doAfterAllAnalysed(AnalysisContext analysisContext) {
+                    // no-op
+                }
+            }).headRowNumber(0);
+
+            if (StringUtils.hasText(sheetName)) {
+                readerBuilder.sheet(sheetName).doRead();
+            } else {
+                readerBuilder.sheet().doRead();
+            }
+            return rows;
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private static BigDecimal sum(BigDecimal left, BigDecimal right) {
@@ -281,10 +357,20 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<MonthlySettl
         if (!StringUtils.hasText(raw)) {
             return null;
         }
+        String text = raw.trim().replace("％", "%");
+        Matcher matcher = TAX_RATE_PATTERN.matcher(text);
+        if (matcher.find()) {
+            text = matcher.group(1);
+        } else if (text.endsWith("%")) {
+            text = text.substring(0, text.length() - 1).trim();
+        }
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
         try {
-            return new BigDecimal(raw).stripTrailingZeros().toPlainString() + "%";
+            return new BigDecimal(text).stripTrailingZeros().toPlainString() + "%";
         } catch (NumberFormatException ex) {
-            return raw + "%";
+            return null;
         }
     }
 

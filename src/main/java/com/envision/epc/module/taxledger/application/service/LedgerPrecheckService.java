@@ -7,7 +7,6 @@ import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.application.dto.CumulativeTaxSummary23202355ColumnDTO;
 import com.envision.epc.module.taxledger.application.dto.MonthlySettlementTaxParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
-import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.ProjectCumulativeDeclarationSheetDTO;
 import com.envision.epc.module.taxledger.application.dto.ProjectCumulativePaymentSheetDTO;
 import com.envision.epc.module.taxledger.application.dto.TaxAccountingDifferenceMonitor23202355ItemDTO;
@@ -36,7 +35,6 @@ import org.springframework.util.StringUtils;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -69,11 +67,10 @@ public class LedgerPrecheckService {
     private final BlobStorageRemote blobStorageRemote;
     private final TaxLedgerService taxLedgerService;
 
-    public PrecheckSnapshotDTO precheck(String companyCode, String periodMonth) {
+    public void precheck(String companyCode, String periodMonth) {
         List<String> errors = new ArrayList<>();
         Map<FileCategoryEnum, FileRecord> latestByCategory = latestFileByCategory(companyCode, periodMonth);
         Set<FileCategoryEnum> required = requiredCategories(companyCode);
-        List<PrecheckSnapshotDTO.InputItem> inputs = new ArrayList<>();
         Map<FileCategoryEnum, FileRecord> parsedFiles = new HashMap<>();
 
         for (FileCategoryEnum category : required) {
@@ -87,24 +84,16 @@ public class LedgerPrecheckService {
                 continue;
             }
             parsedFiles.put(category, parsed);
-            inputs.add(toInputItem(parsed));
         }
 
         if (!errors.isEmpty()) {
             throw new BizException(ErrorCode.BAD_REQUEST, String.join("; ", errors));
         }
 
-        PrecheckSnapshotDTO snapshot = new PrecheckSnapshotDTO();
-        snapshot.setCompanyCode(companyCode);
-        snapshot.setPeriodMonth(periodMonth);
-        snapshot.setRequiredCategories(required.stream().map(Enum::name).sorted().toList());
-        snapshot.setInputs(inputs);
-        snapshot.setFingerprint(UUID.randomUUID().toString().replace("-", ""));
-        snapshot.setGeneratedAt(LocalDateTime.now());
         if (SKIP_PREVIOUS_LEDGER_VALIDATION) {
-            snapshot.setPreviousLedgerValidation(buildSkippedPreviousLedgerValidation(periodMonth));
+            skipPreviousLedgerValidation();
         } else {
-            snapshot.setPreviousLedgerValidation(precheckPreviousLedgerPart(companyCode, periodMonth));
+            precheckPreviousLedgerPart(companyCode, periodMonth);
         }
 
         if (isCompany2320Or2355(companyCode)) {
@@ -117,14 +106,11 @@ public class LedgerPrecheckService {
                     parsedResultReader.readParsedData(n30File.getParseResultBlobPath(), PlAppendix23202355DTO.class);
             MonthlySettlementTaxParsedDTO monthly =
                     parsedResultReader.readParsedData(monthlyFile.getParseResultBlobPath(), MonthlySettlementTaxParsedDTO.class);
-            TaxLedgerService.N30ValidationResult validated = taxLedgerService.validateAndNormalizeN30(uploaded, monthly);
-            snapshot.setN30NormalizedData(validated.getData());
-            snapshot.setValidationDetails(validated.getValidationDetails());
+            taxLedgerService.validateAndNormalizeN30(uploaded, monthly);
         }
-        return snapshot;
     }
 
-    private PrecheckSnapshotDTO.PreviousLedgerValidation precheckPreviousLedgerPart(String companyCode, String periodMonth) {
+    private void precheckPreviousLedgerPart(String companyCode, String periodMonth) {
         PreviousLedgerContext previous = loadPreviousLedgerContext(companyCode, periodMonth);
         if (previous == null) {
             throw new BizException(ErrorCode.BAD_REQUEST, PREVIOUS_LEDGER_REQUIRED_MSG);
@@ -179,26 +165,11 @@ public class LedgerPrecheckService {
             throw new BizException(ErrorCode.BAD_REQUEST, String.join("; ", errors));
         }
 
-        PrecheckSnapshotDTO.PreviousLedgerValidation validation = new PrecheckSnapshotDTO.PreviousLedgerValidation();
-        validation.setPreviousPeriodMonth(previous.previousPeriodMonth);
-        validation.setPreviousLedgerRunId(previous.runId);
-        validation.setPreviousLedgerArtifactPath(previous.artifactPath);
-        validation.setCheckedSheets(checkedSheets);
-        validation.setIssues(List.of());
-        validation.setParsedSummary(parsedSummary);
-        return validation;
+        // 前序台账校验仅用于阻断，本阶段不再写入快照明细。
     }
 
-    private PrecheckSnapshotDTO.PreviousLedgerValidation buildSkippedPreviousLedgerValidation(String periodMonth) {
-        PrecheckSnapshotDTO.PreviousLedgerValidation validation = new PrecheckSnapshotDTO.PreviousLedgerValidation();
-        String previousPeriod = parseYearMonth(periodMonth).minusMonths(1).toString();
-        validation.setPreviousPeriodMonth(previousPeriod);
-        validation.setPreviousLedgerRunId(null);
-        validation.setPreviousLedgerArtifactPath(null);
-        validation.setCheckedSheets(List.of());
-        validation.setIssues(List.of("前序台账校验已临时跳过"));
-        validation.setParsedSummary(Map.of("skipped", true));
-        return validation;
+    private void skipPreviousLedgerValidation() {
+        // 仅保留流程行为，不写入快照。
     }
 
     @SuppressWarnings("unchecked")
@@ -645,17 +616,6 @@ public class LedgerPrecheckService {
             required.add(FileCategoryEnum.CONTRACT_STAMP_DUTY_LEDGER);
         }
         return required;
-    }
-
-    private PrecheckSnapshotDTO.InputItem toInputItem(FileRecord record) {
-        PrecheckSnapshotDTO.InputItem item = new PrecheckSnapshotDTO.InputItem();
-        item.setFileId(record.getId());
-        item.setFileName(record.getFileName());
-        item.setFileCategory(record.getFileCategory() == null ? null : record.getFileCategory().name());
-        item.setParseStatus(record.getParseStatus() == null ? null : record.getParseStatus().name());
-        item.setParseResultBlobPath(record.getParseResultBlobPath());
-        item.setFileSize(record.getFileSize());
-        return item;
     }
 
     private boolean isCompany2320Or2355(String companyCode) {

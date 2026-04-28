@@ -16,9 +16,21 @@ public class SheetExecutionPlan {
     private static final List<PlanItem> PLAN = buildPlan();
 
     public List<LedgerSheetCode> orderedFor(String companyCode) {
+        return orderedForRender(companyCode);
+    }
+
+    public List<LedgerSheetCode> orderedForBuild(String companyCode) {
         return PLAN.stream()
                 .filter(item -> item.enabledWhen.test(companyCode))
                 .map(item -> item.code)
+                .toList();
+    }
+
+    public List<LedgerSheetCode> orderedForRender(String companyCode) {
+        return PLAN.stream()
+                .filter(item -> item.enabledWhen.test(companyCode))
+                .map(item -> item.code)
+                .filter(this::isRenderedInFinalLedger)
                 .toList();
     }
 
@@ -37,6 +49,9 @@ public class SheetExecutionPlan {
     }
 
     private static boolean isVisibleBusinessSheet(LedgerSheetCode code) {
+        if (code == LedgerSheetCode.BS_APPENDIX) {
+            return false;
+        }
         FileCategoryEnum category = code.getFileCategory();
         return category != null
                 && category.isVisibleInFinalLedger()
@@ -61,6 +76,11 @@ public class SheetExecutionPlan {
     }
 
     private record PlanItem(LedgerSheetCode code, Predicate<String> enabledWhen) {
+    }
+
+    private boolean isRenderedInFinalLedger(LedgerSheetCode code) {
+        return code != LedgerSheetCode.PL_APPENDIX_2320
+                && code != LedgerSheetCode.PL_APPENDIX_PROJECT;
     }
 
     private static Predicate<String> byScope(LedgerSheetCode code) {

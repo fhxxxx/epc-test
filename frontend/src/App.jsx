@@ -131,23 +131,6 @@ const CONFIG_META = [
       { title: "是否拆分", dataIndex: "isSplit" },
       { title: "是否显示", dataIndex: "isDisplay" }
     ]
-  },
-  {
-    key: "vat-special",
-    label: "增值税特殊条目",
-    endpoint: "/tax-ledger/config/vat-special",
-    fields: [
-      { name: "itemSeq", label: "条目序号", required: true },
-      { name: "companyCode", label: "公司代码", required: true },
-      { name: "specialItem", label: "特殊条目", required: true },
-      { name: "isDisplay", label: "是否显示(Y/N)", required: true }
-    ],
-    columns: [
-      { title: "条目序号", dataIndex: "itemSeq" },
-      { title: "公司代码", dataIndex: "companyCode" },
-      { title: "特殊条目", dataIndex: "specialItem" },
-      { title: "是否显示", dataIndex: "isDisplay" }
-    ]
   }
 ];
 

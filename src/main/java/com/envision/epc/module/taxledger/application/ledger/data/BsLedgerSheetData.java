@@ -1,23 +1,34 @@
 package com.envision.epc.module.taxledger.application.ledger.data;
+
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetData;
 import lombok.Value;
-import java.util.List;
-import com.envision.epc.module.taxledger.application.dto.BsStatementRowDTO;
-@Value
 
 /**
- * 资产负债表（BS） 页数据。
+ * 资产负债表（BS） 页渲染输入。
  */
+@Value
 public class BsLedgerSheetData implements LedgerSheetData {
-    List<BsStatementRowDTO> payload;
+    RenderMode renderMode;
+    String targetSheetName;
+    String previousSheetName;
+    String currentBsBlobPath;
+    String currentBsAppendixBlobPath;
+    String previousLedgerBlobPath;
+
     @Override
     public LedgerSheetCode sheetCode() {
         return LedgerSheetCode.BS;
     }
+
     @Override
     public Integer rowCount() {
-        return payload == null ? 0 : payload.size();
+        return null;
+    }
+
+    public enum RenderMode {
+        FIRST_BUILD,
+        APPEND_ON_PREVIOUS
     }
 }
 

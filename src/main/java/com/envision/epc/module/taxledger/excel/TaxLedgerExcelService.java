@@ -35,7 +35,7 @@ public class TaxLedgerExcelService {
         Workbook workbook = new Workbook();
         List<Map<String, Object>> sheetReports = new ArrayList<>();
 
-        for (LedgerSheetCode code : executionPlan.orderedFor(renderContext.getCompanyCode())) {
+        for (LedgerSheetCode code : executionPlan.orderedForRender(renderContext.getCompanyCode())) {
             LedgerSheetData data = workbookData.required(code);
             @SuppressWarnings("unchecked")
             LedgerSheetRenderer<LedgerSheetData> renderer =

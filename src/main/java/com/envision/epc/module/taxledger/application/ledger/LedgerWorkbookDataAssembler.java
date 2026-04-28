@@ -19,7 +19,7 @@ public class LedgerWorkbookDataAssembler {
                 .companyCode(ctx.getCompanyCode())
                 .yearMonth(ctx.getYearMonth());
 
-        for (LedgerSheetCode code : executionPlan.orderedFor(ctx.getCompanyCode())) {
+        for (LedgerSheetCode code : executionPlan.orderedForBuild(ctx.getCompanyCode())) {
             long start = System.currentTimeMillis();
             LedgerSheetData data = registry.requiredBuilder(code).build(ctx);
             long elapsed = System.currentTimeMillis() - start;

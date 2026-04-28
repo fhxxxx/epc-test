@@ -112,27 +112,4 @@ public class ConfigController {
         configService.deleteVatBasicItemConfig(id);
     }
 
-    /**
-     * 查询增值税特殊条目配置
-     */
-    @GetMapping("/vat-special")
-    public List<VatSpecialItemConfig> listVatSpecialConfig(@RequestParam(required = false) String companyCode) {
-        return configService.listVatSpecialItemConfig(companyCode);
-    }
-
-    /**
-     * 保存增值税特殊条目配置
-     */
-    @PostMapping("/vat-special")
-    public VatSpecialItemConfig saveVatSpecialConfig(@RequestBody VatSpecialItemConfig command) {
-        return configService.saveVatSpecialItemConfig(command);
-    }
-
-    /**
-     * 删除增值税特殊条目配置
-     */
-    @DeleteMapping("/vat-special/{id}")
-    public void deleteVatSpecialConfig(@PathVariable Long id) {
-        configService.deleteVatSpecialItemConfig(id);
-    }
 }

@@ -52,6 +52,22 @@ public final class SheetDataReaders {
         return value;
     }
 
+    public static <E> E requireObjectPreloaded(LedgerBuildContext ctx,
+                                               FileCategoryEnum category,
+                                               Class<E> type,
+                                               LedgerSheetCode sheetCode) {
+        ensureFilePresent(ctx, category, sheetCode);
+        if (!ctx.hasParsed(category)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "组装Sheet数据失败: " + sheetCode.getDisplayName()
+                    + "，缺少预加载解析结果，类别=" + categoryDisplayName(category));
+        }
+        E value = ctx.getParsedObject(category, type);
+        if (value == null) {
+            throw emptyParsed(category, sheetCode);
+        }
+        return value;
+    }
+
     public static Workbook requireSourceWorkbook(LedgerBuildContext ctx,
                                                  FileCategoryEnum category,
                                                  LedgerSheetCode sheetCode) {
@@ -92,4 +108,3 @@ public final class SheetDataReaders {
         return category.name();
     }
 }
-

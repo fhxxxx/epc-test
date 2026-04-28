@@ -2,7 +2,6 @@ package com.envision.epc.module.taxledger.application.ledger;
 
 import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
-import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
 import lombok.Builder;
@@ -19,12 +18,11 @@ import java.util.Map;
 public class LedgerBuildContext {
     String companyCode;
     String yearMonth;
-    PrecheckSnapshotDTO snapshot;
     List<FileRecord> files;
-    Map<String, Object> nodeOutputs;
     String traceId;
     String operator;
     LedgerParsedDataGateway parsedDataGateway;
+    LedgerConfigSnapshot configSnapshot;
     Map<FileCategoryEnum, Object> preloadedParsedData;
     Map<String, Object> preloadSummary;
 

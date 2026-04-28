@@ -7,7 +7,6 @@ import com.envision.epc.infrastructure.response.BizException;
 import com.envision.epc.infrastructure.response.ErrorCode;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerJobCommand;
 import com.envision.epc.module.taxledger.application.command.CreateLedgerRunCommand;
-import com.envision.epc.module.taxledger.application.dto.PrecheckSnapshotDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerJobListDTO;
 import com.envision.epc.module.taxledger.application.dto.LedgerRunDetailDTO;
 import com.envision.epc.module.taxledger.domain.LedgerArtifactTypeEnum;
@@ -220,9 +219,8 @@ public class LedgerJobService {
             job.setErrorMsg(null);
             ledgerJobMapper.updateById(job);
 
-            PrecheckSnapshotDTO snapshot;
             try {
-                snapshot = precheckService.precheck(job.getCompanyCode(), job.getYearMonth());
+                precheckService.precheck(job.getCompanyCode(), job.getYearMonth());
             } catch (BizException ex) {
                 fail(job, LedgerJobStatusEnum.VALIDATION_FAILED, ex.getMessage());
                 return;
@@ -234,7 +232,7 @@ public class LedgerJobService {
             CreateLedgerRunCommand runCommand = new CreateLedgerRunCommand();
             runCommand.setCompanyCode(job.getCompanyCode());
             runCommand.setYearMonth(job.getYearMonth());
-            LedgerRunDetailDTO detail = ledgerService.createRun(runCommand, snapshot);
+            LedgerRunDetailDTO detail = ledgerService.createRun(runCommand);
             job.setRunId(detail.getRunId());
             ledgerJobMapper.updateById(job);
 

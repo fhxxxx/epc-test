@@ -10,7 +10,7 @@ import org.springframework.util.StringUtils;
 import java.util.List;
 
 /**
- * 配置表统一服务（5张配置表）
+ * 配置表统一服务（4张配置表）
  */
 @Service
 @RequiredArgsConstructor
@@ -19,7 +19,6 @@ public class ConfigService {
     private final TaxCategoryConfigMapper categoryConfigMapper;
     private final ProjectConfigMapper projectConfigMapper;
     private final VatBasicItemConfigMapper vatBasicItemConfigMapper;
-    private final VatSpecialItemConfigMapper vatSpecialItemConfigMapper;
 
     /**
      * 查询公司代码配置
@@ -162,37 +161,4 @@ public class ConfigService {
         }
     }
 
-    /**
-     * 查询增值税特殊条目配置
-     */
-    public List<VatSpecialItemConfig> listVatSpecialItemConfig(String companyCode) {
-        return vatSpecialItemConfigMapper.selectList(new LambdaQueryWrapper<VatSpecialItemConfig>()
-                .eq(VatSpecialItemConfig::getIsDeleted, 0)
-                .eq(StringUtils.hasText(companyCode), VatSpecialItemConfig::getCompanyCode, companyCode)
-                .orderByAsc(VatSpecialItemConfig::getItemSeq));
-    }
-
-    /**
-     * 保存增值税特殊条目配置
-     */
-    public VatSpecialItemConfig saveVatSpecialItemConfig(VatSpecialItemConfig config) {
-        config.setIsDeleted(0);
-        if (config.getId() == null || vatSpecialItemConfigMapper.selectById(config.getId()) == null) {
-            vatSpecialItemConfigMapper.insert(config);
-        } else {
-            vatSpecialItemConfigMapper.updateById(config);
-        }
-        return config;
-    }
-
-    /**
-     * 删除增值税特殊条目配置（逻辑删除）
-     */
-    public void deleteVatSpecialItemConfig(Long id) {
-        VatSpecialItemConfig config = vatSpecialItemConfigMapper.selectById(id);
-        if (config != null) {
-            config.setIsDeleted(1);
-            vatSpecialItemConfigMapper.updateById(config);
-        }
-    }
 }

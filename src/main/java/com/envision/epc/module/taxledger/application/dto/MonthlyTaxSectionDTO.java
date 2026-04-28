@@ -33,4 +33,7 @@ public class MonthlyTaxSectionDTO {
 
     /** 未开票税额 */
     private BigDecimal uninvoicedTaxAmount;
+
+    /** 是否合计行（用于聚合时跳过） */
+    private Boolean totalRow;
 }
