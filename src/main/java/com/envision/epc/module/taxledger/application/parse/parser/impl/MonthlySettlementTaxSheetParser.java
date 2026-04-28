@@ -9,6 +9,7 @@ import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.ParserValueUtils;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
@@ -199,17 +200,17 @@ public class MonthlySettlementTaxSheetParser implements SheetParser<MonthlySettl
             return List.of();
         }
 
-        String targetSheetName = category().getTargetSheetName();
-        List<Map<Integer, String>> rowsByName = readRowsFromSheet(new ByteArrayInputStream(bytes), targetSheetName);
-        if (!rowsByName.isEmpty()) {
-            return rowsByName;
+        try {
+            String resolvedSheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            List<Map<Integer, String>> rows = readRowsFromSheet(new ByteArrayInputStream(bytes), resolvedSheetName);
+            if (rows.isEmpty()) {
+                result.addIssue("睿景景程月结数据表-报税：目标sheet读取为空");
+            }
+            return rows;
+        } catch (Exception e) {
+            result.addIssue("睿景景程月结数据表-报税：解析sheet失败 - " + e.getMessage());
+            return List.of();
         }
-
-        List<Map<Integer, String>> rowsFromFirst = readRowsFromSheet(new ByteArrayInputStream(bytes), null);
-        if (rowsFromFirst.isEmpty()) {
-            result.addIssue("睿景景程月结数据表-报税：按sheet名与首sheet均未读取到数据");
-        }
-        return rowsFromFirst;
     }
 
     private List<Map<Integer, String>> readRowsFromSheet(InputStream inputStream,

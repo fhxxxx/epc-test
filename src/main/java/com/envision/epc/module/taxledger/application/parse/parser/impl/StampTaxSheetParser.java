@@ -8,10 +8,12 @@ import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.ParserValueUtils;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -52,7 +54,9 @@ public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRow
                 .build();
         try {
             List<Map<Integer, String>> rawRows = new ArrayList<>();
-            EasyExcelFactory.read(inputStream, new AnalysisEventListener<Map<Integer, String>>() {
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            EasyExcelFactory.read(new ByteArrayInputStream(bytes), new AnalysisEventListener<Map<Integer, String>>() {
                         @Override
                         public void invoke(Map<Integer, String> data, AnalysisContext context) {
                             rawRows.add(new HashMap<>(data));
@@ -64,7 +68,7 @@ public class StampTaxSheetParser implements SheetParser<List<StampDutySummaryRow
                         }
                     })
                     .headRowNumber(0)
-                    .sheet(category().getTargetSheetName())
+                    .sheet(sheetName)
                     .doRead();
 
             List<StampDutySummaryRowDTO> rows = parseSummaryBlock(rawRows);

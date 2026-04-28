@@ -1,7 +1,6 @@
 package com.envision.epc.module.taxledger.application.parse.parser.impl;
 
 import com.alibaba.excel.EasyExcelFactory;
-import com.alibaba.excel.read.builder.ExcelReaderBuilder;
 import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
@@ -11,6 +10,7 @@ import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import org.springframework.util.CollectionUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,10 +35,12 @@ public abstract class AbstractDatalakeDetailSheetParser<T> implements SheetParse
                 .data(null)
                 .build();
         try {
-            ExcelReaderBuilder readerBuilder = EasyExcelFactory.read(inputStream)
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            List<DatalakeExportRowDTO> rows = EasyExcelFactory.read(new ByteArrayInputStream(bytes))
                     .registerConverter(new SafeBigDecimalReadConverter())
-                    .head(DatalakeExportRowDTO.class);
-            List<DatalakeExportRowDTO> rows = SheetSelectUtils.resolveEasyExcelSheet(readerBuilder, category())
+                    .head(DatalakeExportRowDTO.class)
+                    .sheet(sheetName)
                     .doReadSync();
             if (CollectionUtils.isEmpty(rows)) {
                 rows = List.of();

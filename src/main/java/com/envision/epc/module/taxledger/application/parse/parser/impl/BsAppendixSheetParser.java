@@ -1,7 +1,6 @@
 package com.envision.epc.module.taxledger.application.parse.parser.impl;
 
 import com.alibaba.excel.EasyExcelFactory;
-import com.alibaba.excel.read.builder.ExcelReaderBuilder;
 import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
@@ -11,6 +10,7 @@ import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUti
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.List;
 
@@ -28,10 +28,12 @@ public class BsAppendixSheetParser implements SheetParser<List<BsAppendixUploadD
                 .build();
 
         try {
-            ExcelReaderBuilder readerBuilder = EasyExcelFactory.read(inputStream)
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            List<BsAppendixUploadDTO> rows = EasyExcelFactory.read(new ByteArrayInputStream(bytes))
                     .registerConverter(new SafeBigDecimalReadConverter())
-                    .head(BsAppendixUploadDTO.class);
-            List<BsAppendixUploadDTO> rows = SheetSelectUtils.resolveEasyExcelSheet(readerBuilder, category())
+                    .head(BsAppendixUploadDTO.class)
+                    .sheet(sheetName)
                     .doReadSync();
             result.setData(rows);
             return result;

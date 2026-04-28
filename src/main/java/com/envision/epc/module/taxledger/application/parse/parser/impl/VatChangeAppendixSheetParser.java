@@ -9,9 +9,11 @@ import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.ParserValueUtils;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.List;
@@ -50,7 +52,9 @@ public class VatChangeAppendixSheetParser implements SheetParser<VatChangeAppend
 
         AtomicReference<BigDecimal> extracted = new AtomicReference<>();
         try {
-            EasyExcelFactory.read(inputStream, new AnalysisEventListener<Map<Integer, String>>() {
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            EasyExcelFactory.read(new ByteArrayInputStream(bytes), new AnalysisEventListener<Map<Integer, String>>() {
                         @Override
                         public void invoke(Map<Integer, String> rowData, AnalysisContext analysisContext) {
                             if (rowData == null || rowData.isEmpty() || extracted.get() != null) {
@@ -72,7 +76,7 @@ public class VatChangeAppendixSheetParser implements SheetParser<VatChangeAppend
                         }
                     })
                     .headRowNumber(0)
-                    .sheet(category().getTargetSheetName())
+                    .sheet(sheetName)
                     .doRead();
         } catch (Exception e) {
             result.addIssue("INVALID_WORKBOOK: " + e.getMessage());

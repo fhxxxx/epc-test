@@ -8,10 +8,12 @@ import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.parser.ParserValueUtils;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -51,7 +53,9 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
 
         List<Map<Integer, String>> rows = new ArrayList<>();
         try {
-            EasyExcelFactory.read(inputStream, new AnalysisEventListener<Map<Integer, String>>() {
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            EasyExcelFactory.read(new ByteArrayInputStream(bytes), new AnalysisEventListener<Map<Integer, String>>() {
                         @Override
                         public void invoke(Map<Integer, String> rowData, AnalysisContext analysisContext) {
                             rows.add(new HashMap<>(rowData));
@@ -63,7 +67,7 @@ public class VatOutputSheetParser implements SheetParser<VatOutputSheetUploadDTO
                         }
                     })
                     .headRowNumber(0)
-                    .sheet(category().getTargetSheetName())
+                    .sheet(sheetName)
                     .doRead();
         } catch (Exception e) {
             result.addIssue("增值税销项：读取Excel失败 - " + e.getMessage());

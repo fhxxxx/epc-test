@@ -7,10 +7,12 @@ import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import cn.hutool.core.text.CharSequenceUtil;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,10 +48,12 @@ public class VatInputCertificationSheetParser implements SheetParser<VatInputCer
                 .data(emptyResult())
                 .build();
         try {
-            List<VatInputCertificationItemDTO> rows = EasyExcelFactory.read(inputStream)
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            List<VatInputCertificationItemDTO> rows = EasyExcelFactory.read(new ByteArrayInputStream(bytes))
                     .registerConverter(new SafeBigDecimalReadConverter())
                     .head(VatInputCertificationItemDTO.class)
-                    .sheet(category().getTargetSheetName())
+                    .sheet(sheetName)
                     .headRowNumber(3)
                     .doReadSync();
             BigDecimal sum = BigDecimal.ZERO;

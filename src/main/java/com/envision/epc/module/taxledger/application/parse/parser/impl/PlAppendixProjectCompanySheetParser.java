@@ -6,9 +6,11 @@ import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
 import com.envision.epc.module.taxledger.application.parse.SafeBigDecimalReadConverter;
 import com.envision.epc.module.taxledger.application.parse.parser.SheetParser;
+import com.envision.epc.module.taxledger.application.parse.parser.SheetSelectUtils;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.List;
 
@@ -37,10 +39,12 @@ public class PlAppendixProjectCompanySheetParser implements SheetParser<List<PlA
                 .data(List.of())
                 .build();
         try {
-            List<PlAppendixProjectCompanyUploadDTO> rows = EasyExcelFactory.read(inputStream)
+            byte[] bytes = inputStream.readAllBytes();
+            String sheetName = SheetSelectUtils.resolveEasyExcelSheetName(bytes, category());
+            List<PlAppendixProjectCompanyUploadDTO> rows = EasyExcelFactory.read(new ByteArrayInputStream(bytes))
                     .registerConverter(new SafeBigDecimalReadConverter())
                     .head(PlAppendixProjectCompanyUploadDTO.class)
-                    .sheet(category().getTargetSheetName())
+                    .sheet(sheetName)
                     .doReadSync();
             result.setData(rows);
             return result;
