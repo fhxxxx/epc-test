@@ -29,6 +29,10 @@ public enum LedgerSheetCode {
     VAT_TABLE_ONE_CUMULATIVE_OUTPUT(FileCategoryEnum.VAT_TABLE_ONE_CUMULATIVE_OUTPUT),
     TAX_ACCOUNTING_DIFFERENCE_MONITOR(FileCategoryEnum.TAX_ACCOUNTING_DIFFERENCE_MONITOR),
     UNINVOICED_MONITOR(FileCategoryEnum.UNINVOICED_MONITOR),
+    DL_INCOME(FileCategoryEnum.DL_INCOME),
+    DL_OUTPUT(FileCategoryEnum.DL_OUTPUT),
+    DL_INPUT(FileCategoryEnum.DL_INPUT),
+    DL_OTHER(FileCategoryEnum.DL_OTHER),
     SUMMARY(FileCategoryEnum.SUMMARY);
 
     private final FileCategoryEnum fileCategory;
@@ -45,7 +49,9 @@ public enum LedgerSheetCode {
 
     public SheetGenerationMode getMode() {
         return switch (this) {
-            case VAT_OUTPUT, VAT_INPUT_CERT -> SheetGenerationMode.COPY_FROM_SOURCE;
+            case VAT_OUTPUT, VAT_INPUT_CERT, STAMP_TAX, CUMULATIVE_PROJECT_TAX,
+                    DL_INCOME, DL_OUTPUT, DL_INPUT, DL_OTHER ->
+                    SheetGenerationMode.COPY_FROM_SOURCE;
             default -> SheetGenerationMode.COMPUTED;
         };
     }

@@ -27,11 +27,11 @@ public enum FileCategoryEnum {
     TAX_ACCOUNTING_DIFFERENCE_MONITOR("账税差异监控-2320、2355", false, true, "账税差异监控-2320、2355", FileCategoryScopeEnum.RJJC_2320_2355),
     UNINVOICED_MONITOR("未开票数监控", false, true, "未开票数监控", FileCategoryScopeEnum.ALL),
     FINAL_LEDGER("最终台账", false, false, null, FileCategoryScopeEnum.ALL),
-    DL_INCOME("收入明细", true, false, null, FileCategoryScopeEnum.ALL),
-    DL_OUTPUT("销项明细", true, false, null, FileCategoryScopeEnum.ALL),
-    DL_INPUT("进项明细", true, false, null, FileCategoryScopeEnum.ALL),
+    DL_INCOME("收入明细", true, true, "收入明细", FileCategoryScopeEnum.ALL),
+    DL_OUTPUT("销项明细", true, true, "销项明细", FileCategoryScopeEnum.ALL),
+    DL_INPUT("进项明细", true, true, "进项明细", FileCategoryScopeEnum.ALL),
     DL_INCOME_TAX("所得税明细", true, false, null, FileCategoryScopeEnum.ALL),
-    DL_OTHER("其他科目明细", true, false, null, FileCategoryScopeEnum.ALL);
+    DL_OTHER("其他科目明细", true, true, "其他科目明细", FileCategoryScopeEnum.ALL);
 
     private final String displayName;
     private final boolean manualUpload;

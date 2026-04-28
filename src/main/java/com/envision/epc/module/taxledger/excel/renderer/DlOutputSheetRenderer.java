@@ -4,19 +4,18 @@ import com.envision.epc.facade.azure.BlobStorageRemote;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import org.springframework.stereotype.Component;
 
-
 /**
- * 增值税进项认证清单 页渲染器。
+ * 销项明细 页渲染器（纯复制）。
  */
 @Component
-public class VatInputCertSheetRenderer extends AbstractSourceCopySheetRenderer {
-    public VatInputCertSheetRenderer(BlobStorageRemote blobStorageRemote) {
+public class DlOutputSheetRenderer extends AbstractSourceCopySheetRenderer {
+    public DlOutputSheetRenderer(BlobStorageRemote blobStorageRemote) {
         super(blobStorageRemote);
     }
 
     @Override
     public LedgerSheetCode support() {
-        return LedgerSheetCode.VAT_INPUT_CERT;
+        return LedgerSheetCode.DL_OUTPUT;
     }
 }
 

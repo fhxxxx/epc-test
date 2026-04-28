@@ -1,23 +1,26 @@
 package com.envision.epc.module.taxledger.application.ledger.data;
+
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetData;
 import lombok.Value;
-import java.util.List;
-import com.envision.epc.module.taxledger.application.dto.StampDutySummaryRowDTO;
-@Value
 
 /**
- * 印花税明细-2320、2355 页数据。
+ * 纯复制页渲染输入（从源文件复制sheet到目标sheet）。
  */
-public class StampTaxLedgerSheetData implements LedgerSheetData {
-    List<StampDutySummaryRowDTO> payload;
+@Value
+public class SourceCopyLedgerSheetData implements LedgerSheetData {
+    LedgerSheetCode sheetCode;
+    String sourceBlobPath;
+    String sourceSheetName;
+    boolean fallbackToFirstSheet;
+
     @Override
     public LedgerSheetCode sheetCode() {
-        return LedgerSheetCode.STAMP_TAX;
+        return sheetCode;
     }
+
     @Override
     public Integer rowCount() {
-        return payload == null ? 0 : payload.size();
+        return null;
     }
 }
-

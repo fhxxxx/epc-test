@@ -1132,16 +1132,6 @@ function LedgerPanel({ companyCode }) {
     load();
   }, [companyCode, yearMonth, pageCurrent, pageSize]);
 
-  useEffect(() => {
-    if (!rows.some((item) => runningStatuses.includes(item?.status))) {
-      return undefined;
-    }
-    const timer = setInterval(() => {
-      load();
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [rows, companyCode, yearMonth, pageCurrent, pageSize]);
-
   const openJobDetail = async (jobId) => {
     try {
       setDetailLoading(true);
