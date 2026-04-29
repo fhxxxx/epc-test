@@ -17,7 +17,10 @@ public class SummarySheetDTO {
     /** 印花税分段 */
     private List<StampDutyItem> stampDutyRows;
 
-    /** 公共税种分段（增值税及其他税种，除企业所得税） */
+    /** 增值税分段（从原commonTaxRows中拆分） */
+    private List<CommonTaxItem> vatTaxRows;
+
+    /** 公共税种分段（非增值税，除企业所得税） */
     private List<CommonTaxItem> commonTaxRows;
 
     /** 企业所得税分段 */

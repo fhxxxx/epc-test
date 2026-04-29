@@ -238,6 +238,16 @@ public class CumulativeTaxSummary23202355SheetDataBuilder implements LedgerSheet
                 }
             }
         }
+        if (summary.getVatTaxRows() != null) {
+            for (SummarySheetDTO.CommonTaxItem row : summary.getVatTaxRows()) {
+                if (row == null) {
+                    continue;
+                }
+                if (containsKeyword(row.getTaxType(), normalizedKeyword)) {
+                    sum = sum.add(nvl(row.getActualTaxPayable()));
+                }
+            }
+        }
         return sum;
     }
 

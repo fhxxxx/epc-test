@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Summary 页模板渲染（Named Range 锚点）。
@@ -38,6 +39,25 @@ public class SummaryTemplateRenderService {
     private static final String NR_CIT_DETAIL = "NR_CIT_DETAIL_TMPL";
     private static final String NR_CIT_SUBTOTAL = "NR_CIT_SUBTOTAL_TMPL";
     private static final String NR_FINAL_TOTAL = "NR_FINAL_TOTAL_TMPL";
+
+    private static final SummaryTemplateRowSpec STAMP_HEADER_SPEC = SummaryTemplateRowSpec.of(
+            SummaryTemplateNamespace.STAMP_SECTION_HEADER,
+            NR_STAMP_HEADER,
+            SummaryColumnMapping.COL_SEQ,
+            SummaryColumnMapping.COL_VARIANCE_REASON
+    );
+    private static final SummaryTemplateRowSpec STAMP_DETAIL_SPEC = SummaryTemplateRowSpec.of(
+            SummaryTemplateNamespace.STAMP_DETAIL_ROW,
+            NR_STAMP_DETAIL,
+            SummaryColumnMapping.COL_SEQ,
+            SummaryColumnMapping.COL_VARIANCE_REASON
+    );
+    private static final SummaryTemplateRowSpec STAMP_SUBTOTAL_SPEC = SummaryTemplateRowSpec.of(
+            SummaryTemplateNamespace.STAMP_SUBTOTAL_ROW,
+            NR_STAMP_SUBTOTAL,
+            SummaryColumnMapping.COL_SEQ,
+            SummaryColumnMapping.COL_VARIANCE_REASON
+    );
 
     public Workbook render(SummarySheetDTO summaryData) throws Exception {
         Workbook workbook = new Workbook();
@@ -85,10 +105,16 @@ public class SummaryTemplateRenderService {
         Cells summaryCells = summarySheet.getCells();
 
         replaceGlobalTokens(summarySheet, summaryData);
+        SummaryTemplateStyleRegistry stampStyleRegistry = SummaryTemplateStyleRegistry.fromTemplate(
+                templateWorkbook,
+                TEMPLATE_PATH,
+                TEMPLATE_SHEET,
+                STAMP_HEADER_SPEC,
+                STAMP_DETAIL_SPEC,
+                STAMP_SUBTOTAL_SPEC
+        );
 
-        int stampHeaderRow = resolveRow(templateWorkbook, NR_STAMP_HEADER);
-        int stampDetailRow = resolveRow(templateWorkbook, NR_STAMP_DETAIL);
-        int stampSubtotalRow = resolveRow(templateWorkbook, NR_STAMP_SUBTOTAL);
+        int stampHeaderRow = stampStyleRegistry.get(SummaryTemplateNamespace.STAMP_SECTION_HEADER).rowIndex();
         int commonHeaderRow = resolveRow(templateWorkbook, NR_COMMON_HEADER);
         int commonDetailRow = resolveRow(templateWorkbook, NR_COMMON_DETAIL);
         int commonSubtotalRow = resolveRow(templateWorkbook, NR_COMMON_SUBTOTAL);
@@ -105,13 +131,12 @@ public class SummaryTemplateRenderService {
         List<Integer> declaredSubtotalRows = new ArrayList<>();
         List<Integer> bookSubtotalRows = new ArrayList<>();
 
-        SectionResult stampResult = renderSection(
+        SectionResult stampResult = renderStampSection(
                 templateCells,
                 summaryCells,
                 cursor,
-                new SectionSpec(stampHeaderRow, stampDetailRow, stampSubtotalRow, true, false),
                 summaryData.getStampDutyRows(),
-                this::fillStampDetailRow
+                stampStyleRegistry
         );
         cursor = stampResult.getNextCursor();
         addIfNotNull(declaredSubtotalRows, stampResult.getDeclaredSubtotalRow());
@@ -121,7 +146,7 @@ public class SummaryTemplateRenderService {
                 summaryCells,
                 cursor,
                 new SectionSpec(commonHeaderRow, commonDetailRow, commonSubtotalRow, true, true),
-                summaryData.getCommonTaxRows(),
+                mergeCommonRows(summaryData),
                 this::fillCommonDetailRow
         );
         cursor = commonResult.getNextCursor();
@@ -145,9 +170,64 @@ public class SummaryTemplateRenderService {
 
         log.info("summary rendered: stampRows={}, commonRows={}, citRows={}, totalRows={}",
                 size(summaryData.getStampDutyRows()),
-                size(summaryData.getCommonTaxRows()),
+                size(mergeCommonRows(summaryData)),
                 size(summaryData.getCorporateIncomeTaxRows()),
                 cursor + 1);
+    }
+
+    private List<SummarySheetDTO.CommonTaxItem> mergeCommonRows(SummarySheetDTO summaryData) {
+        List<SummarySheetDTO.CommonTaxItem> merged = new ArrayList<>();
+        if (summaryData != null && summaryData.getVatTaxRows() != null) {
+            merged.addAll(summaryData.getVatTaxRows());
+        }
+        if (summaryData != null && summaryData.getCommonTaxRows() != null) {
+            merged.addAll(summaryData.getCommonTaxRows());
+        }
+        return merged;
+    }
+
+    private SectionResult renderStampSection(Cells templateCells,
+                                             Cells summaryCells,
+                                             int cursor,
+                                             List<SummarySheetDTO.StampDutyItem> rows,
+                                             SummaryTemplateStyleRegistry styleRegistry) throws Exception {
+        if (rows == null || rows.isEmpty()) {
+            return new SectionResult(cursor, null, null);
+        }
+
+        List<SummarySheetDTO.StampDutyItem> detailRows = new ArrayList<>();
+        SummarySheetDTO.StampDutyItem providedSubtotal = null;
+        for (SummarySheetDTO.StampDutyItem row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (isStampSubtotalRow(row)) {
+                if (providedSubtotal == null) {
+                    providedSubtotal = row;
+                }
+                continue;
+            }
+            detailRows.add(row);
+        }
+        if (detailRows.isEmpty() && providedSubtotal == null) {
+            return new SectionResult(cursor, null, null);
+        }
+
+        insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.STAMP_SECTION_HEADER, cursor++);
+        int detailStart = cursor;
+        int detailEnd = cursor - 1;
+
+        for (SummarySheetDTO.StampDutyItem row : detailRows) {
+            insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.STAMP_DETAIL_ROW, cursor);
+            fillStampDetailRow(summaryCells, cursor, row);
+            detailEnd = cursor;
+            cursor++;
+        }
+
+        insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.STAMP_SUBTOTAL_ROW, cursor);
+        fillStampSubtotalRow(summaryCells, cursor, providedSubtotal, detailStart, detailEnd);
+        log.info("summary stamp section rendered: detailCount={}, subtotalRow={}", detailRows.size(), cursor + 1);
+        return new SectionResult(cursor + 1, cursor, null);
     }
 
     private <T> SectionResult renderSection(Cells templateCells,
@@ -201,6 +281,22 @@ public class SummaryTemplateRenderService {
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getTaxBaseMonth2());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getTaxBaseMonth3());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
+    }
+
+    private void fillStampSubtotalRow(Cells cells,
+                                      int rowIndex,
+                                      SummarySheetDTO.StampDutyItem subtotal,
+                                      int detailStart,
+                                      int detailEnd) {
+        if (subtotal != null) {
+            fillStampDetailRow(cells, rowIndex, subtotal);
+        }
+        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        if (detailStart <= detailEnd) {
+            setSumFormula(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, detailStart, detailEnd);
+        } else if (subtotal == null) {
+            cells.get(rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT).putValue(0);
+        }
     }
 
     private void fillCommonDetailRow(Cells cells, int rowIndex, SummarySheetDTO.CommonTaxItem row) {
@@ -333,6 +429,16 @@ public class SummaryTemplateRenderService {
         targetCells.copyRow(sourceCells, sourceRowIndex, destinationRowIndex);
     }
 
+    private void insertRowCopyByNamespace(Cells targetCells,
+                                          Cells sourceCells,
+                                          SummaryTemplateStyleRegistry styleRegistry,
+                                          SummaryTemplateNamespace namespace,
+                                          int destinationRowIndex) throws Exception {
+        SummaryTemplateStyleRegistry.ResolvedTemplateRow resolved = styleRegistry.get(namespace);
+        targetCells.insertRows(destinationRowIndex, 1);
+        targetCells.copyRow(sourceCells, resolved.rowIndex(), destinationRowIndex);
+    }
+
     private void setSumFormula(Cells cells, int rowIndex, int colIndex, int startRow, int endRow) {
         String col = toColumnName(colIndex);
         if (startRow > endRow) {
@@ -374,6 +480,19 @@ public class SummaryTemplateRenderService {
             return;
         }
         cells.get(row, col).putValue(value);
+    }
+
+    private boolean isStampSubtotalRow(SummarySheetDTO.StampDutyItem row) {
+        if (row == null) {
+            return false;
+        }
+        String taxType = normalizeText(row.getTaxType());
+        String taxItem = normalizeText(row.getTaxItem());
+        return taxType.contains("合计") || taxItem.contains("合计");
+    }
+
+    private String normalizeText(String text) {
+        return text == null ? "" : text.replace("\u00A0", " ").trim().toLowerCase(Locale.ROOT);
     }
 
     private String resolveSheetName(Workbook workbook, String baseName) {

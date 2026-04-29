@@ -53,7 +53,7 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
             if (currentPlRect == null) {
                 throw new BizException(ErrorCode.BAD_REQUEST, "PL源文件无有效数据区域");
             }
-            currentPlRect = adjustRectForMissingFirstColumn(currentPlSheet.getCells(), currentPlRect);
+            currentPlRect = expandRectToFirstColumn(currentPlRect);
 
             Worksheet targetSheet;
             int currentBlockStartRow;
@@ -231,35 +231,11 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
         return new Rect(minRow, minCol, realMaxRow - minRow + 1, realMaxCol - minCol + 1);
     }
 
-    private Rect adjustRectForMissingFirstColumn(Cells cells, Rect detected) {
+    private Rect expandRectToFirstColumn(Rect detected) {
         if (detected == null || detected.startCol <= 0) {
             return detected;
         }
-        int sampleEndRow = Math.min(cells.getMaxDataRow(), detected.startRow + 200);
-        int numericCount = 0;
-        int textCount = 0;
-        for (int row = detected.startRow; row <= sampleEndRow; row++) {
-            if (!hasContent(cells, row, detected.startCol)) {
-                continue;
-            }
-            String text = cells.get(row, detected.startCol).getStringValue();
-            if (text == null) {
-                continue;
-            }
-            String normalized = text.trim();
-            if (normalized.isEmpty()) {
-                continue;
-            }
-            if (normalized.matches("^[+-]?\\d+(?:\\.\\d+)?$")) {
-                numericCount++;
-            } else {
-                textCount++;
-            }
-        }
-        if (numericCount >= 5 && textCount <= 2) {
-            return new Rect(detected.startRow, detected.startCol - 1, detected.rowCount, detected.colCount + 1);
-        }
-        return detected;
+        return new Rect(detected.startRow, 0, detected.rowCount, detected.colCount + detected.startCol);
     }
 
     private int resolveVisibleStartCol(Cells cells, int preferredCol) {

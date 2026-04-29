@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
@@ -33,6 +35,7 @@ import java.util.stream.Collectors;
 public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<SummaryLedgerSheetData> {
     private static final BigDecimal ONE = BigDecimal.ONE;
     private static final String DEFAULT_VARIANCE_REASON = "待核对";
+    private static final Pattern SEQ_NO_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?$");
 
     @Override
     public LedgerSheetCode support() {
@@ -53,6 +56,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         Map<String, ProjectConfig> projectConfigByTaxCategory = resolveProjectConfigByTaxCategory(ctx);
 
         List<SummarySheetDTO.StampDutyItem> stampRows = new ArrayList<>();
+        List<SummarySheetDTO.CommonTaxItem> vatRows = new ArrayList<>();
         List<SummarySheetDTO.CommonTaxItem> commonRows = new ArrayList<>();
         List<SummarySheetDTO.CorporateIncomeTaxItem> citRows = new ArrayList<>();
 
@@ -79,10 +83,16 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
                 citRows.add(buildCitRow(config, taxItem, projectConfigByTaxCategory));
                 continue;
             }
-            commonRows.add(buildCommonRow(config, taxType, taxItem, rowSeqNo, vatAmountByTaxItem, bookAmountByAccount));
+            SummarySheetDTO.CommonTaxItem row = buildCommonRow(config, taxType, taxItem, rowSeqNo, vatAmountByTaxItem, bookAmountByAccount);
+            if (isVatTaxType(taxType)) {
+                vatRows.add(row);
+            } else {
+                commonRows.add(row);
+            }
         }
 
         dto.setStampDutyRows(stampRows);
+        dto.setVatTaxRows(vatRows);
         dto.setCommonTaxRows(commonRows);
         dto.setCorporateIncomeTaxRows(citRows);
 
@@ -206,7 +216,9 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
             }
         }
         return dedup.values().stream()
-                .sorted(Comparator.comparing(this::seqSortKey).thenComparing(cfg -> normalizeText(cfg.getTaxCategory())))
+                .sorted(Comparator.comparing(this::toSeqOrderKey)
+                        .thenComparing(cfg -> normalizeText(cfg == null ? null : cfg.getSeqNo()))
+                        .thenComparing(cfg -> normalizeText(cfg == null ? null : cfg.getTaxCategory())))
                 .collect(Collectors.toList());
     }
 
@@ -369,15 +381,27 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         return "Q" + ((month - 1) / 3 + 1);
     }
 
-    private BigDecimal seqSortKey(TaxCategoryConfig cfg) {
-        String seqNo = cfg == null ? null : cfg.getSeqNo();
-        if (seqNo == null || seqNo.isBlank()) {
-            return new BigDecimal("99999");
+    private SeqOrderKey toSeqOrderKey(TaxCategoryConfig cfg) {
+        String rawSeq = normalizeText(cfg == null ? null : cfg.getSeqNo());
+        if (rawSeq.isBlank() || !SEQ_NO_PATTERN.matcher(rawSeq).matches()) {
+            return SeqOrderKey.invalid(rawSeq);
         }
         try {
-            return new BigDecimal(seqNo.trim());
+            String[] parts = rawSeq.split("\\.", 2);
+            BigInteger intPart = new BigInteger(parts[0]);
+            if (parts.length == 1) {
+                return SeqOrderKey.integer(rawSeq, intPart);
+            }
+            String fracRaw = parts[1];
+            if (fracRaw == null || fracRaw.isBlank()) {
+                return SeqOrderKey.integer(rawSeq, intPart);
+            }
+            if (fracRaw.chars().allMatch(ch -> ch == '0')) {
+                return SeqOrderKey.integer(rawSeq, intPart);
+            }
+            return SeqOrderKey.decimal(rawSeq, intPart, new BigInteger(fracRaw));
         } catch (Exception ignore) {
-            return new BigDecimal("99999");
+            return SeqOrderKey.invalid(rawSeq);
         }
     }
 
@@ -419,9 +443,66 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         return Objects.requireNonNullElse(normalizeText(value), "");
     }
 
+    private boolean isVatTaxType(String taxType) {
+        return normalizeText(taxType).contains("增值税");
+    }
+
     private static class StampAgg {
         private BigDecimal taxableAmount = BigDecimal.ZERO;
         private BigDecimal taxRate = BigDecimal.ZERO;
         private BigDecimal taxPayableAmount = BigDecimal.ZERO;
+    }
+
+    private static class SeqOrderKey implements Comparable<SeqOrderKey> {
+        private final int validRank;
+        private final BigInteger intPart;
+        private final int typeRank;
+        private final BigInteger fracPart;
+        private final String rawSeq;
+
+        private SeqOrderKey(int validRank,
+                            BigInteger intPart,
+                            int typeRank,
+                            BigInteger fracPart,
+                            String rawSeq) {
+            this.validRank = validRank;
+            this.intPart = intPart;
+            this.typeRank = typeRank;
+            this.fracPart = fracPart;
+            this.rawSeq = rawSeq == null ? "" : rawSeq;
+        }
+
+        private static SeqOrderKey invalid(String rawSeq) {
+            return new SeqOrderKey(1, BigInteger.valueOf(Long.MAX_VALUE), 1, BigInteger.ZERO, rawSeq);
+        }
+
+        private static SeqOrderKey decimal(String rawSeq, BigInteger intPart, BigInteger fracPart) {
+            return new SeqOrderKey(0, intPart, 0, fracPart, rawSeq);
+        }
+
+        private static SeqOrderKey integer(String rawSeq, BigInteger intPart) {
+            return new SeqOrderKey(0, intPart, 1, BigInteger.ZERO, rawSeq);
+        }
+
+        @Override
+        public int compareTo(SeqOrderKey other) {
+            int cmp = Integer.compare(this.validRank, other.validRank);
+            if (cmp != 0) {
+                return cmp;
+            }
+            cmp = this.intPart.compareTo(other.intPart);
+            if (cmp != 0) {
+                return cmp;
+            }
+            cmp = Integer.compare(this.typeRank, other.typeRank);
+            if (cmp != 0) {
+                return cmp;
+            }
+            cmp = this.fracPart.compareTo(other.fracPart);
+            if (cmp != 0) {
+                return cmp;
+            }
+            return this.rawSeq.compareTo(other.rawSeq);
+        }
     }
 }

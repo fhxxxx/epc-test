@@ -20,8 +20,9 @@ public class SummaryLedgerSheetData implements LedgerSheetData {
     @Override
     public Integer rowCount() {
         int stamp = summary == null || summary.getStampDutyRows() == null ? 0 : summary.getStampDutyRows().size();
+        int vat = summary == null || summary.getVatTaxRows() == null ? 0 : summary.getVatTaxRows().size();
         int common = summary == null || summary.getCommonTaxRows() == null ? 0 : summary.getCommonTaxRows().size();
         int cit = summary == null || summary.getCorporateIncomeTaxRows() == null ? 0 : summary.getCorporateIncomeTaxRows().size();
-        return stamp + common + cit;
+        return stamp + vat + common + cit;
     }
 }

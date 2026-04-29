@@ -64,6 +64,17 @@
   - 仅整数税目行显示序号（合计类）
   - 小数明细税目行 `序号` 置空
 
+### 2.2 本次实现变更同步（2026-04-29）
+
+- `SummarySheetDTO` 已新增：`vatTaxRows`（增值税分段）。
+- `commonTaxRows` 语义已调整为：仅承载**非增值税**公共税种。
+- Builder 拆分规则（已落地）：
+  - `taxType` 包含“增值税” -> 进入 `vatTaxRows`
+  - 其余公共税种 -> 进入 `commonTaxRows`
+- Renderer 当前为最小兼容方案（已落地）：
+  - 模板不重构
+  - 渲染 common 段时使用 `vatTaxRows + commonTaxRows` 合并输入，确保生成结果不丢数、链路可启动。
+
 ---
 
 ## 3. 数据来源（仅sheet名称）
@@ -88,10 +99,11 @@
 
 ## 4. 对象建模建议（按3段表头）
 
-采用“一个总对象 + 三个List”的固定结构：
+采用“一个总对象 + 四个List”的固定结构：
 
 - `stampDutyRows`：印花税段（对应 `A3~O3` 表头）
-- `commonTaxRows`：公共税种段（对应 `A18~O18` 表头，覆盖除企业所得税外的剩余税种）
+- `vatTaxRows`：增值税段（从公共税种中拆分，逻辑对象）
+- `commonTaxRows`：非增值税公共税种段（对应 `A18~O18` 表头）
 - `corporateIncomeTaxRows`：企业所得税段（对应 `C31~N31` 表头）
 
 其中企业所得税4个季度字段采用“字段固定、表头动态”：
@@ -120,13 +132,13 @@ public class SummarySheetDTO {
     /** 台账期间（如2025-02） */
     private String ledgerPeriod;
 
-    /** 申报日期 */
-    private String declarationDate;
-
     /** 印花税分段 */
     private List<StampDutyItem> stampDutyRows;
 
-    /** 公共税种分段（增值税及其他税种，除企业所得税） */
+    /** 增值税分段（从原commonTaxRows中拆分） */
+    private List<CommonTaxItem> vatTaxRows;
+
+    /** 公共税种分段（非增值税，除企业所得税） */
     private List<CommonTaxItem> commonTaxRows;
 
     /** 企业所得税分段 */
@@ -204,7 +216,6 @@ public class SummarySheetDTO {
 {
   "companyName": "伊金霍洛旗悦盛新能源有限公司",
   "ledgerPeriod": "2025-02",
-  "declarationDate": "2025-02-01",
   "stampDutyRows": [
     {
       "seqNo": 1,
@@ -221,20 +232,36 @@ public class SummarySheetDTO {
       "varianceReason": ""
     }
   ],
-  "commonTaxRows": [
+  "vatTaxRows": [
     {
       "seqNo": 2,
       "taxType": "增值税",
-      "taxItem": "增值税进项税额",
-      "taxBasisDesc": "见表-增值税进项认证清单",
-      "taxBaseAmount": 1979092.20,
+      "taxItem": "销项税额-主营业务收入",
+      "taxBasisDesc": "主营业务收入",
+      "taxBaseAmount": 0.00,
       "levyRatio": 1.0,
-      "taxRate": null,
-      "actualTaxPayable": 142670.14,
+      "taxRate": 1.0,
+      "actualTaxPayable": 0.00,
       "accountCode": "2221010100",
-      "bookAmount": 142670.14,
+      "bookAmount": 0.00,
       "varianceAmount": 0.00,
-      "varianceReason": "尾差，以账面计提申报为准"
+      "varianceReason": ""
+    }
+  ],
+  "commonTaxRows": [
+    {
+      "seqNo": 4,
+      "taxType": "城建税",
+      "taxItem": "城建税",
+      "taxBasisDesc": "增值税应纳税额",
+      "taxBaseAmount": 0.00,
+      "levyRatio": 1.0,
+      "taxRate": 0.07,
+      "actualTaxPayable": 0.00,
+      "accountCode": "2221010400",
+      "bookAmount": 0.00,
+      "varianceAmount": 0.00,
+      "varianceReason": ""
     }
   ],
   "corporateIncomeTaxRows": [
@@ -344,7 +371,9 @@ public class SummarySheetDTO {
 
 #### 9.2.2 `taxType`（申报税种）
 - 来源：`税目配置表.税种`
-- 范围：增值税及其他非企业所得税税种。
+- 范围：**非增值税**且非企业所得税税种。
+
+> 说明：增值税行已独立放入 `vatTaxRows`；当前渲染阶段为了兼容模板，仍会将 `vatTaxRows + commonTaxRows` 合并写入 common 区块。
 
 #### 9.2.3 `taxItem`（税目）
 - 来源：`税目配置表.税目`
