@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -260,12 +261,42 @@ public class SummaryTemplateRenderService {
     }
 
     private void replaceGlobalTokens(Worksheet summarySheet, SummarySheetDTO summaryData) {
-        String title = (summaryData.getCompanyName() == null ? "" : summaryData.getCompanyName()) + " 税务台账";
+        String title = buildSummaryTitle(summaryData.getCompanyName(), summaryData.getLedgerPeriod());
         String periodText = summaryData.getLedgerPeriod() == null ? "" : summaryData.getLedgerPeriod();
         replaceToken(summarySheet, "{{title}}", title);
         replaceToken(summarySheet, "{{periodText}}", periodText);
         replaceToken(summarySheet, "{{declaredTotal}}", "");
         replaceToken(summarySheet, "{{bookTotal}}", "");
+    }
+
+    private String buildSummaryTitle(String companyName, String ledgerPeriod) {
+        String safeCompanyName = companyName == null ? "" : companyName.trim();
+        YearMonth ym = parseYearMonth(ledgerPeriod);
+        if (ym == null) {
+            return safeCompanyName + "税费申报明细";
+        }
+        return safeCompanyName + ym.getYear() + "年" + ym.getMonthValue() + "月（税务所属期）税费申报明细";
+    }
+
+    private YearMonth parseYearMonth(String ledgerPeriod) {
+        if (ledgerPeriod == null) {
+            return null;
+        }
+        String text = ledgerPeriod.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (text.matches("^\\d{6}$")) {
+            text = text.substring(0, 4) + "-" + text.substring(4, 6);
+        }
+        if (!text.matches("^\\d{4}-\\d{2}$")) {
+            return null;
+        }
+        try {
+            return YearMonth.parse(text);
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 
     private void replaceToken(Worksheet sheet, String token, String replacement) {

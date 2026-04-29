@@ -27,6 +27,8 @@ import java.nio.file.Path;
 @Component
 @RequiredArgsConstructor
 public class BsSheetRenderer implements LedgerSheetRenderer<BsLedgerSheetData> {
+    private static final int BS_APPENDIX_GAP_COL = 1;
+    private static final int BS_APPENDIX_EXTRA_OFFSET_ROW = 5;
     private final BlobStorageRemote blobStorageRemote;
 
     @Override
@@ -93,9 +95,8 @@ public class BsSheetRenderer implements LedgerSheetRenderer<BsLedgerSheetData> {
             }
 
             int mainRightCol = currentBlockStartCol + bsRect.colCount - 1;
-            int existingRightCol = targetSheet.getCells().getMaxDataColumn();
-            int appendixStartCol = Math.max(mainRightCol, existingRightCol) + 1;
-            int appendixStartRow = currentBlockStartRow + 2;
+            int appendixStartCol = mainRightCol + BS_APPENDIX_GAP_COL + 1;
+            int appendixStartRow = currentBlockStartRow + 2 + BS_APPENDIX_EXTRA_OFFSET_ROW;
             copyRect(currentBsAppendixSheet.getCells(), appendixRect, targetSheet.getCells(), appendixStartRow, appendixStartCol);
         } finally {
             closeQuietly(previousLedgerHandle);

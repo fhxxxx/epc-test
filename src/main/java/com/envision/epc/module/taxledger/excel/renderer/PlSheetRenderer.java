@@ -53,6 +53,7 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
             if (currentPlRect == null) {
                 throw new BizException(ErrorCode.BAD_REQUEST, "PL源文件无有效数据区域");
             }
+            currentPlRect = adjustRectForMissingFirstColumn(currentPlSheet.getCells(), currentPlRect);
 
             Worksheet targetSheet;
             int currentBlockStartRow;
@@ -87,8 +88,8 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
             }
 
             int mainRightCol = currentBlockStartCol + currentPlRect.colCount - 1;
-            int appendixStartCol = mainRightCol + 1;
-            int appendixStartRow = currentBlockStartRow + 2;
+            int appendixStartCol = resolveVisibleStartCol(targetSheet.getCells(), mainRightCol + 2);
+            int appendixStartRow = currentBlockStartRow + 5;
             if (data.getAppendix2320Data() != null) {
                 renderAppendix2320(targetSheet.getCells(), appendixStartRow, appendixStartCol, data.getAppendix2320Data());
             } else if (data.getAppendixProjectData() != null && !data.getAppendixProjectData().isEmpty()) {
@@ -146,9 +147,7 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
 
     private void renderAppendix2320(Cells cells, int startRow, int startCol, PlAppendix23202355DTO dto) {
         int row = startRow;
-        cells.get(row++, startCol).putValue("PL附表-2320、2355");
-
-        cells.get(row, startCol).putValue("Section1-拆分依据");
+        cells.get(row, startCol).putValue("");
         cells.get(row, startCol + 1).putValue("未开票收入");
         cells.get(row, startCol + 2).putValue("销项");
         cells.get(row, startCol + 3).putValue("已开票收入");
@@ -165,7 +164,7 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
             }
         }
         row++;
-        cells.get(row, startCol).putValue("Section2-拆分依据");
+        cells.get(row, startCol).putValue("");
         cells.get(row, startCol + 1).putValue("申报金额");
         cells.get(row, startCol + 2).putValue("申报税额");
         row++;
@@ -181,7 +180,6 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
 
     private void renderAppendixProject(Cells cells, int startRow, int startCol, List<PlAppendixProjectCompanyUploadDTO> rows) {
         int row = startRow;
-        cells.get(row++, startCol).putValue("PL附表-项目公司");
         cells.get(row, startCol).putValue("拆分依据");
         cells.get(row, startCol + 1).putValue("主营业务收入");
         cells.get(row, startCol + 2).putValue("销项");
@@ -233,13 +231,68 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
         return new Rect(minRow, minCol, realMaxRow - minRow + 1, realMaxCol - minCol + 1);
     }
 
+    private Rect adjustRectForMissingFirstColumn(Cells cells, Rect detected) {
+        if (detected == null || detected.startCol <= 0) {
+            return detected;
+        }
+        int sampleEndRow = Math.min(cells.getMaxDataRow(), detected.startRow + 200);
+        int numericCount = 0;
+        int textCount = 0;
+        for (int row = detected.startRow; row <= sampleEndRow; row++) {
+            if (!hasContent(cells, row, detected.startCol)) {
+                continue;
+            }
+            String text = cells.get(row, detected.startCol).getStringValue();
+            if (text == null) {
+                continue;
+            }
+            String normalized = text.trim();
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            if (normalized.matches("^[+-]?\\d+(?:\\.\\d+)?$")) {
+                numericCount++;
+            } else {
+                textCount++;
+            }
+        }
+        if (numericCount >= 5 && textCount <= 2) {
+            return new Rect(detected.startRow, detected.startCol - 1, detected.rowCount, detected.colCount + 1);
+        }
+        return detected;
+    }
+
+    private int resolveVisibleStartCol(Cells cells, int preferredCol) {
+        int col = Math.max(0, preferredCol);
+        int maxProbe = Math.max(cells.getMaxColumn() + 20, col + 20);
+        while (col <= maxProbe && cells.getColumnWidth(col) <= 0d) {
+            col++;
+        }
+        return col;
+    }
+
     private boolean hasContent(Cells cells, int row, int col) {
         Cell cell = cells.get(row, col);
-        if (cell == null || cell.getValue() == null) {
+        if (cell == null) {
             return false;
         }
+        Object raw = cell.getValue();
+        if (raw instanceof String s) {
+            return !s.trim().isEmpty();
+        }
+        if (raw != null) {
+            return true;
+        }
+        String display = cell.getDisplayStringValue();
+        if (display != null && !display.trim().isEmpty()) {
+            return true;
+        }
         String value = cell.getStringValue();
-        return value != null && !value.trim().isEmpty();
+        if (value != null && !value.trim().isEmpty()) {
+            return true;
+        }
+        String formula = cell.getFormula();
+        return formula != null && !formula.trim().isEmpty();
     }
 
     private void copyRect(Cells sourceCells, Rect sourceRect, Cells targetCells, int targetStartRow, int targetStartCol) throws Exception {
