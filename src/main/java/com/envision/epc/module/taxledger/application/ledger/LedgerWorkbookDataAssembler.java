@@ -22,6 +22,7 @@ public class LedgerWorkbookDataAssembler {
         for (LedgerSheetCode code : executionPlan.orderedForBuild(ctx.getCompanyCode())) {
             long start = System.currentTimeMillis();
             LedgerSheetData data = registry.requiredBuilder(code).build(ctx);
+            ctx.putBuilt(code, data);
             long elapsed = System.currentTimeMillis() - start;
             builder.sheetData(code, data);
             builder.buildMetric(code, elapsed);

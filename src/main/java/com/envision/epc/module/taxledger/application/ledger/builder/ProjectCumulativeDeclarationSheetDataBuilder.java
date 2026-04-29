@@ -34,7 +34,6 @@ import java.util.Map;
 public class ProjectCumulativeDeclarationSheetDataBuilder implements LedgerSheetDataBuilder<ProjectCumulativeDeclarationLedgerSheetData> {
     private static final String HEADER_PERIOD = "所属期";
     private static final String HEADER_TOTAL = "税款合计";
-    public static final String DECLARATION_TOTALS_KEY = "projectCumulativeDeclarationTotals";
 
     private final PreviousLedgerLocator previousLedgerLocator;
     private final BlobStorageRemote blobStorageRemote;
@@ -69,23 +68,7 @@ public class ProjectCumulativeDeclarationSheetDataBuilder implements LedgerSheet
             monthRows.add(toRowData(row, false));
         }
         ProjectCumulativeDeclarationLedgerSheetData.RowData totalRow = buildTotalRow(targetYear, taxHeaders, rowsByPeriod);
-        publishTotalsSnapshot(ctx, monthRows);
         return new ProjectCumulativeDeclarationLedgerSheetData(String.valueOf(targetYear), taxHeaders, monthRows, totalRow);
-    }
-
-    private void publishTotalsSnapshot(LedgerBuildContext ctx,
-                                       List<ProjectCumulativeDeclarationLedgerSheetData.RowData> monthRows) {
-        if (ctx.getPreloadSummary() == null) {
-            return;
-        }
-        Map<String, BigDecimal> totals = new LinkedHashMap<>();
-        for (ProjectCumulativeDeclarationLedgerSheetData.RowData row : monthRows) {
-            if (row == null || row.getPeriodKey() == null) {
-                continue;
-            }
-            totals.put(row.getPeriodKey(), row.getTaxTotal());
-        }
-        ctx.getPreloadSummary().put(DECLARATION_TOTALS_KEY, totals);
     }
 
     private Map<String, MutableRow> initYearRows(int year) {

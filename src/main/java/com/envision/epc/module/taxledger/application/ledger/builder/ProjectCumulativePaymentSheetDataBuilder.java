@@ -5,6 +5,7 @@ import com.envision.epc.module.taxledger.application.dto.ProjectCumulativePaymen
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetDataBuilder;
+import com.envision.epc.module.taxledger.application.ledger.data.ProjectCumulativeDeclarationLedgerSheetData;
 import com.envision.epc.module.taxledger.application.ledger.data.ProjectCumulativePaymentLedgerSheetData;
 import com.envision.epc.module.taxledger.application.parse.ParseContext;
 import com.envision.epc.module.taxledger.application.parse.ParseResult;
@@ -224,22 +225,21 @@ public class ProjectCumulativePaymentSheetDataBuilder implements LedgerSheetData
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, BigDecimal> resolveDeclarationTotals(LedgerBuildContext ctx) {
-        if (ctx.getPreloadSummary() == null) {
-            return Map.of();
-        }
-        Object value = ctx.getPreloadSummary().get(ProjectCumulativeDeclarationSheetDataBuilder.DECLARATION_TOTALS_KEY);
-        if (!(value instanceof Map<?, ?> map)) {
-            return Map.of();
-        }
         Map<String, BigDecimal> result = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (entry.getKey() == null) {
+        ProjectCumulativeDeclarationLedgerSheetData declarationData = ctx.requireBuilt(
+                LedgerSheetCode.PROJECT_CUMULATIVE_DECLARATION,
+                ProjectCumulativeDeclarationLedgerSheetData.class,
+                support());
+        if (declarationData.getMonthRows() == null) {
+            return result;
+        }
+        for (ProjectCumulativeDeclarationLedgerSheetData.RowData row : declarationData.getMonthRows()) {
+            if (row == null || row.getPeriodKey() == null) {
                 continue;
             }
-            String key = normalize(entry.getKey().toString());
-            BigDecimal amount = entry.getValue() instanceof BigDecimal ? (BigDecimal) entry.getValue() : null;
+            String key = normalize(row.getPeriodKey());
+            BigDecimal amount = row.getTaxTotal();
             result.put(key, amount);
         }
         return result;

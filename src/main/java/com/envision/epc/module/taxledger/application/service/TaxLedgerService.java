@@ -465,6 +465,7 @@ public class TaxLedgerService {
                 .configSnapshot(configSnapshot)
                 .preloadedParsedData(preload.preloadedParsedData())
                 .preloadSummary(preloadSummary)
+                .builtSheetDataMap(new LinkedHashMap<>())
                 .build();
         log.info("ledger context built: runId={}, companyCode={}, yearMonth={}, filesCount={}, preloadTotal={}, preloadSuccess={}, preloadFailed={}, preloadSkipped={}, failedCategories={}",
                 run.getId(),
