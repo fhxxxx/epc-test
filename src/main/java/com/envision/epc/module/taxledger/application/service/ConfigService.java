@@ -129,12 +129,15 @@ public class ConfigService {
     public List<VatBasicItemConfig> listVatBasicItemConfig(String companyCode) {
         LambdaQueryWrapper<VatBasicItemConfig> wrapper = new LambdaQueryWrapper<VatBasicItemConfig>()
                 .eq(VatBasicItemConfig::getIsDeleted, 0);
-        if (StringUtils.hasText(companyCode)) {
-            wrapper.and(w -> w.isNull(VatBasicItemConfig::getCompanyCode)
-                    .or().eq(VatBasicItemConfig::getCompanyCode, companyCode));
-        }
         wrapper.orderByAsc(VatBasicItemConfig::getItemSeq);
-        return vatBasicItemConfigMapper.selectList(wrapper);
+        List<VatBasicItemConfig> all = vatBasicItemConfigMapper.selectList(wrapper);
+        if (!StringUtils.hasText(companyCode)) {
+            return all;
+        }
+        String target = companyCode.trim();
+        return all.stream()
+                .filter(cfg -> matchesCompanyCode(cfg == null ? null : cfg.getCompanyCode(), target))
+                .toList();
     }
 
     /**
@@ -159,6 +162,23 @@ public class ConfigService {
             config.setIsDeleted(1);
             vatBasicItemConfigMapper.updateById(config);
         }
+    }
+
+    private boolean matchesCompanyCode(String configCompanyCode, String companyCode) {
+        if (!StringUtils.hasText(companyCode)) {
+            return false;
+        }
+        if (!StringUtils.hasText(configCompanyCode)) {
+            return true;
+        }
+        String normalized = configCompanyCode.replace('，', ',');
+        String[] parts = normalized.split(",");
+        for (String part : parts) {
+            if (companyCode.equals(part == null ? "" : part.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

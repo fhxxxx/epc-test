@@ -34,25 +34,25 @@ public class SheetExecutionPlan {
             LedgerSheetCode.PROJECT_CUMULATIVE_DECLARATION,
             LedgerSheetCode.PROJECT_CUMULATIVE_PAYMENT,
             LedgerSheetCode.VAT_CHANGE,
-            LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT,
-            LedgerSheetCode.TAX_ACCOUNTING_DIFFERENCE_MONITOR,
+//            LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT,
+//            LedgerSheetCode.TAX_ACCOUNTING_DIFFERENCE_MONITOR,
             LedgerSheetCode.UNINVOICED_MONITOR,
             LedgerSheetCode.DL_INCOME,
             LedgerSheetCode.DL_OUTPUT,
             LedgerSheetCode.DL_INPUT,
             LedgerSheetCode.DL_OTHER,
-            LedgerSheetCode.SUMMARY,
-            LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355
+            LedgerSheetCode.SUMMARY
+//            LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355
     );
 
     /**
      * Renderer 执行顺序（展示顺序）
      */
     private static final List<LedgerSheetCode> RENDER_PLAN = List.of(
-            LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355,
+//            LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355,
             LedgerSheetCode.CUMULATIVE_PROJECT_TAX,
-            LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT,
-            LedgerSheetCode.TAX_ACCOUNTING_DIFFERENCE_MONITOR,
+//            LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT,
+//            LedgerSheetCode.TAX_ACCOUNTING_DIFFERENCE_MONITOR,
             LedgerSheetCode.BS,
             LedgerSheetCode.PL,
             LedgerSheetCode.DL_INCOME,

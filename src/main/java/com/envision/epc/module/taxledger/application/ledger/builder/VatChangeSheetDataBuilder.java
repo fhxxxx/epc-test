@@ -99,7 +99,7 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
                 .filter(Objects::nonNull)
                 .filter(cfg -> cfg.getIsDeleted() == null || cfg.getIsDeleted() == 0)
                 .filter(cfg -> "Y".equalsIgnoreCase(trim(cfg.getIsDisplay())))
-                .filter(cfg -> isBlank(cfg.getCompanyCode()) || Objects.equals(trim(cfg.getCompanyCode()), trim(ctx.getCompanyCode())))
+                .filter(cfg -> matchesCompanyCode(cfg.getCompanyCode(), ctx.getCompanyCode()))
                 .sorted(Comparator.comparing(cfg -> cfg.getItemSeq() == null ? Integer.MAX_VALUE : cfg.getItemSeq()))
                 .toList();
 
@@ -643,5 +643,24 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private boolean matchesCompanyCode(String configCompanyCode, String companyCode) {
+        String target = trim(companyCode);
+        if (isBlank(target)) {
+            return false;
+        }
+        String cfg = trim(configCompanyCode);
+        if (isBlank(cfg)) {
+            return true;
+        }
+        String normalized = cfg.replace('，', ',');
+        String[] parts = normalized.split(",");
+        for (String part : parts) {
+            if (target.equals(trim(part))) {
+                return true;
+            }
+        }
+        return false;
     }
 }

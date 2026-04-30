@@ -69,7 +69,8 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
                 targetSheet.setName(data.getTargetSheetName());
 
                 Rect previousMainRect = detectEffectiveRect(targetSheet.getCells());
-                int alignedCol = previousMainRect == null ? 1 : previousMainRect.startCol;
+                int preferredCol = previousMainRect == null ? 1 : previousMainRect.startCol;
+                int alignedCol = resolveVisibleStartCol(targetSheet.getCells(), Math.max(1, preferredCol));
                 int appendStartRow = targetSheet.getCells().getMaxDataRow() + 4;
                 if (appendStartRow < 0) {
                     appendStartRow = 0;
@@ -88,7 +89,10 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
             }
 
             int mainRightCol = currentBlockStartCol + currentPlRect.colCount - 1;
-            int appendixStartCol = resolveVisibleStartCol(targetSheet.getCells(), mainRightCol + 2);
+            int blockEndRow = currentBlockStartRow + currentPlRect.rowCount - 1;
+            int occupiedRightCol = findRightmostUsedColInRows(targetSheet.getCells(), currentBlockStartRow, blockEndRow);
+            int anchorRightCol = Math.max(mainRightCol, occupiedRightCol);
+            int appendixStartCol = resolveVisibleStartCol(targetSheet.getCells(), anchorRightCol + 3);
             int appendixStartRow = currentBlockStartRow + 5;
             if (data.getAppendix2320Data() != null) {
                 renderAppendix2320(targetSheet.getCells(), appendixStartRow, appendixStartCol, data.getAppendix2320Data());
@@ -245,6 +249,24 @@ public class PlSheetRenderer implements LedgerSheetRenderer<PlLedgerSheetData> {
             col++;
         }
         return col;
+    }
+
+    private int findRightmostUsedColInRows(Cells cells, int startRow, int endRow) {
+        int maxDataCol = cells.getMaxDataColumn();
+        if (maxDataCol < 0) {
+            return -1;
+        }
+        int from = Math.max(0, startRow);
+        int to = Math.max(from, endRow);
+        int rightmost = -1;
+        for (int row = from; row <= to; row++) {
+            for (int col = 0; col <= maxDataCol; col++) {
+                if (hasContent(cells, row, col)) {
+                    rightmost = Math.max(rightmost, col);
+                }
+            }
+        }
+        return rightmost;
     }
 
     private boolean hasContent(Cells cells, int row, int col) {

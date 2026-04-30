@@ -58,20 +58,20 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
         int headerRow = 0;
         int dataStartRow = 1;
 
+        // 前两列(A/B)按业务要求不渲染：仅渲染C~G列
         String[] headers = new String[]{
-                "基础条目", "拆分依据", "条目", "未开票金额", "当月开票金额", "以前月度开票金额", "合计"
+                "条目", "未开票金额", "当月开票金额", "以前月度开票金额", "合计"
         };
-        for (int col = 0; col < headers.length; col++) {
+        for (int i = 0; i < headers.length; i++) {
+            int col = i + 2;
             Cell cell = cells.get(headerRow, col);
-            cell.putValue(headers[col]);
+            cell.putValue(headers[i]);
             cell.setStyle(buildHeaderStyle(cells));
         }
 
         for (int i = 0; i < rows.size(); i++) {
             VatChangeRowDTO row = rows.get(i);
             int r = dataStartRow + i;
-            writeTextCell(cells, r, 0, row == null ? "" : row.getBaseItem());
-            writeTextCell(cells, r, 1, row == null ? "" : row.getSplitBasis());
             writeTextCell(cells, r, 2, row == null ? "" : row.getItemName());
             writeAmountCell(cells, r, 3, row == null ? null : row.getUnbilledAmount());
             writeAmountCell(cells, r, 4, row == null ? null : row.getCurrentMonthInvoicedAmount());
@@ -133,8 +133,8 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
     }
 
     private void applyColumnWidths(Cells cells) {
-        cells.setColumnWidth(0, 24);
-        cells.setColumnWidth(1, 22);
+        cells.setColumnWidth(0, 8);
+        cells.setColumnWidth(1, 8);
         cells.setColumnWidth(2, 30);
         cells.setColumnWidth(3, 16);
         cells.setColumnWidth(4, 16);
@@ -295,4 +295,3 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
         }
     }
 }
-

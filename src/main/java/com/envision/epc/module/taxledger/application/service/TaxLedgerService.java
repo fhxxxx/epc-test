@@ -384,6 +384,25 @@ public class TaxLedgerService {
         return value.trim();
     }
 
+    private boolean matchesCompanyCode(String configCompanyCode, String companyCode) {
+        String target = normalizeText(companyCode);
+        if (target == null || target.isEmpty()) {
+            return false;
+        }
+        String cfg = normalizeText(configCompanyCode);
+        if (cfg == null || cfg.isEmpty()) {
+            return true;
+        }
+        String normalized = cfg.replace('，', ',');
+        String[] parts = normalized.split(",");
+        for (String part : parts) {
+            if (target.equals(normalizeText(part))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private BigDecimal subtract(BigDecimal a, BigDecimal b) {
         BigDecimal left = a == null ? BigDecimal.ZERO : a;
         BigDecimal right = b == null ? BigDecimal.ZERO : b;
@@ -498,9 +517,10 @@ public class TaxLedgerService {
                 .eq(ProjectConfig::getCompanyCode, companyCode));
         List<VatBasicItemConfig> vatBasicItemConfigs = vatBasicItemConfigMapper.selectList(new LambdaQueryWrapper<VatBasicItemConfig>()
                 .eq(VatBasicItemConfig::getIsDeleted, 0)
-                .and(w -> w.isNull(VatBasicItemConfig::getCompanyCode)
-                        .or().eq(VatBasicItemConfig::getCompanyCode, companyCode))
                 .orderByAsc(VatBasicItemConfig::getItemSeq));
+        vatBasicItemConfigs = vatBasicItemConfigs.stream()
+                .filter(cfg -> matchesCompanyCode(cfg == null ? null : cfg.getCompanyCode(), companyCode))
+                .toList();
 
         return LedgerConfigSnapshot.builder()
                 .companyCode(companyCode)
