@@ -82,6 +82,7 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
         fillCurrentMonthInvoicedAmount(rows, is2320Or2355, vatOutput, monthlySettlementTax);
         fillPreviousMonthInvoicedAmount(rows);
         fillUnbilledAmount(rows);
+        normalizeAmountFields(rows);
 
         String appendixBlobPath = findLatestBlobPath(ctx, FileCategoryEnum.VAT_CHANGE_APPENDIX);
         return new VatChangeLedgerSheetData(appendixBlobPath, null, rows);
@@ -269,7 +270,7 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
 
     private void fillPreviousMonthInvoicedAmount(List<VatChangeRowDTO> rows) {
         for (VatChangeRowDTO row : rows) {
-            row.setPreviousMonthInvoicedAmount(null);
+            row.setPreviousMonthInvoicedAmount(BigDecimal.ZERO);
         }
     }
 
@@ -277,13 +278,22 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
         for (VatChangeRowDTO row : rows) {
             String base = normalizeBaseItem(row.getBaseItem());
             if (!isMainBusinessRevenue(base) && !isOutputTaxPayable(base)) {
-                row.setUnbilledAmount(null);
+                row.setUnbilledAmount(BigDecimal.ZERO);
                 continue;
             }
             BigDecimal unbilled = nvl(row.getTotalAmount())
                     .subtract(nvl(row.getCurrentMonthInvoicedAmount()))
                     .subtract(nvl(row.getPreviousMonthInvoicedAmount()));
             row.setUnbilledAmount(unbilled);
+        }
+    }
+
+    private void normalizeAmountFields(List<VatChangeRowDTO> rows) {
+        for (VatChangeRowDTO row : rows) {
+            row.setTotalAmount(nvl(row.getTotalAmount()));
+            row.setCurrentMonthInvoicedAmount(nvl(row.getCurrentMonthInvoicedAmount()));
+            row.setPreviousMonthInvoicedAmount(nvl(row.getPreviousMonthInvoicedAmount()));
+            row.setUnbilledAmount(nvl(row.getUnbilledAmount()));
         }
     }
 

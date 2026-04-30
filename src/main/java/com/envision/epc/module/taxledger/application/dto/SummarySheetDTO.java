@@ -63,6 +63,7 @@ public class SummarySheetDTO {
 
     @Data
     public static class CorporateIncomeTaxItem {
+        private String seqNo;
         private String projectName;
         private String preferentialPeriod;
         private BigDecimal taxableIncome;

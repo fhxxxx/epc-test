@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Summary 页模板渲染（Named Range 锚点）。
@@ -26,6 +28,7 @@ import java.util.Locale;
 @Slf4j
 @Service
 public class SummaryTemplateRenderService {
+    private static final Pattern LEADING_INTEGER = Pattern.compile("^\\s*(\\d+)\\b.*$");
 
     private static final String TEMPLATE_PATH = "templates/tax-ledger/summary/tax-ledger-summary-template.xlsx";
     private static final String TEMPLATE_SHEET = "Summary_命名区域模板";
@@ -206,7 +209,7 @@ public class SummaryTemplateRenderService {
         cursor = citResult.getNextCursor();
         addIfNotNull(declaredSubtotalRows, citResult.getDeclaredSubtotalRow());
 
-        SectionResult commonResult = renderSection(
+        SectionResult commonResult = renderCommonSectionWithoutSubtotal(
                 templateCells,
                 summaryCells,
                 cursor,
@@ -215,12 +218,14 @@ public class SummaryTemplateRenderService {
                 this::fillCommonDetailRow
         );
         cursor = commonResult.getNextCursor();
-        addIfNotNull(declaredSubtotalRows, commonResult.getDeclaredSubtotalRow());
-        addIfNotNull(bookSubtotalRows, commonResult.getBookSubtotalRow());
+        addRowsIfValid(declaredSubtotalRows, commonResult.getDetailStartRow(), commonResult.getDetailEndRow());
+        addRowsIfValid(bookSubtotalRows, commonResult.getDetailStartRow(), commonResult.getDetailEndRow());
 
         insertRowCopy(summaryCells, templateCells, finalTotalRow, cursor);
         fillFinalTotal(summaryCells, cursor, summaryData.getFinalTotal(), declaredSubtotalRows, bookSubtotalRows);
         cursor++;
+        // 某些区块是后续按模板行复制进来的，最后再做一次token替换，避免占位符残留。
+        replaceGlobalTokens(summarySheet, summaryData);
 
         log.info("summary rendered: stampRows={}, commonRows={}, citRows={}, totalRows={}",
                 size(summaryData.getStampDutyRows()),
@@ -355,6 +360,33 @@ public class SummaryTemplateRenderService {
         return new SectionResult(cursor + 1, declaredSubtotalRow, bookSubtotalRow);
     }
 
+    private <T> SectionResult renderCommonSectionWithoutSubtotal(Cells templateCells,
+                                                                 Cells summaryCells,
+                                                                 int cursor,
+                                                                 SectionSpec spec,
+                                                                 List<T> rows,
+                                                                 RowWriter<T> rowWriter) throws Exception {
+        if (rows == null || rows.isEmpty()) {
+            return new SectionResult(cursor, null, null, null, null);
+        }
+
+        if (spec.isWithHeader()) {
+            insertRowCopy(summaryCells, templateCells, spec.getHeaderTemplateRow(), cursor++);
+        }
+        int detailStart = cursor;
+        for (T row : rows) {
+            insertRowCopy(summaryCells, templateCells, spec.getDetailTemplateRow(), cursor);
+            rowWriter.write(summaryCells, cursor, row);
+            cursor++;
+        }
+        int detailEnd = cursor - 1;
+        if (spec.isMergeTaxType()) {
+            mergeSeqCellsByTaxTypeGroup(summaryCells, detailStart, detailEnd);
+            mergeSameTextCells(summaryCells, detailStart, detailEnd, SummaryColumnMapping.COL_TAX_TYPE);
+        }
+        return new SectionResult(cursor, null, null, detailStart, detailEnd);
+    }
+
     private SectionResult renderCitSection(Cells templateCells,
                                            Cells summaryCells,
                                            int cursor,
@@ -382,6 +414,7 @@ public class SummaryTemplateRenderService {
             return new SectionResult(cursor, null, null);
         }
 
+        int sectionHeaderRow = cursor;
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_SECTION_HEADER, cursor++);
         int detailStart = cursor;
         int detailEnd = cursor - 1;
@@ -391,10 +424,16 @@ public class SummaryTemplateRenderService {
             detailEnd = cursor;
             cursor++;
         }
+        mergeCitHeaderAndDetail(summaryCells, sectionHeaderRow, detailEnd);
 
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_SUBTOTAL_ROW, cursor);
         if (providedSubtotal != null) {
             fillCitDetailRow(summaryCells, cursor, providedSubtotal);
+            fillCitSubtotalIdentity(summaryCells, cursor, providedSubtotal);
+        } else {
+            // 无业务小计输入时，清掉模板占位符，避免出现在最终台账。
+            clearCell(summaryCells, cursor, SummaryColumnMapping.COL_SEQ);
+            clearCell(summaryCells, cursor, SummaryColumnMapping.COL_TAX_TYPE);
         }
         fillCitSubtotalRow(summaryCells, cursor, detailStart, detailEnd);
         log.info("summary cit section rendered: detailCount={}, subtotalRow={}", detailRows.size(), cursor + 1);
@@ -405,18 +444,18 @@ public class SummaryTemplateRenderService {
         if (row == null) {
             return;
         }
-        putSeqIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxBaseQuarter());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getLevyRatio());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getTaxRate());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getActualTaxPayable());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getTaxBaseMonth1());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getTaxBaseMonth2());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getTaxBaseMonth3());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
+        putSeq(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxBaseQuarter());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getLevyRatio());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getTaxRate());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getActualTaxPayable());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getTaxBaseMonth1());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getTaxBaseMonth2());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getTaxBaseMonth3());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
     }
 
     private void fillStampSubtotalRow(Cells cells,
@@ -427,7 +466,7 @@ public class SummaryTemplateRenderService {
         if (subtotal != null) {
             fillStampDetailRow(cells, rowIndex, subtotal);
         }
-        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC);
         // 印花税小计行：按展示口径，清空非汇总字段，仅保留“实际应纳税额(D)”为汇总公式。
         clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
         clearCell(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO);
@@ -449,7 +488,7 @@ public class SummaryTemplateRenderService {
                                        int detailEnd,
                                        boolean withDeclaredSubtotal,
                                        boolean withBookSubtotal) {
-        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC);
         if (withDeclaredSubtotal) {
             setSumFormula(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, detailStart, detailEnd);
         }
@@ -471,7 +510,8 @@ public class SummaryTemplateRenderService {
         if (subtotal != null) {
             fillCommonDetailRow(cells, rowIndex, subtotal);
         }
-        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC);
         // 增值税小计行：按展示口径，清空非汇总字段；D列优先使用字段值，不做强制公司合计。
         clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
         clearCell(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO);
@@ -494,22 +534,22 @@ public class SummaryTemplateRenderService {
         if (row == null) {
             return;
         }
-        putSeqIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxBaseAmount());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getLevyRatio());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getTaxRate());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getActualTaxPayable());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getAccountCode());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getBookAmount());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getVarianceAmount());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
+        putSeq(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxBaseAmount());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getLevyRatio());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getTaxRate());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getActualTaxPayable());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getAccountCode());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getBookAmount());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getVarianceAmount());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
     }
 
     private void fillCitSubtotalRow(Cells cells, int rowIndex, int detailStart, int detailEnd) {
-        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC);
         setSumFormula(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, detailStart, detailEnd);
     }
 
@@ -517,17 +557,38 @@ public class SummaryTemplateRenderService {
         if (row == null) {
             return;
         }
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getProjectName());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getPreferentialPeriod());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxableIncome());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxRate());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getAnnualTaxPayable());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getQ1Tax());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getQ2Tax());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getQ3Tax());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getQ4Tax());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getQ1PayLastYearQ4());
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getLossCarryforwardUsed());
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_SEQ);
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getProjectName());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getPreferentialPeriod());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxableIncome());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxRate());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getAnnualTaxPayable());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getQ1Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getQ2Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getQ3Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getQ4Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getQ1PayLastYearQ4());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getLossCarryforwardUsed());
+    }
+
+    private void fillCitSubtotalIdentity(Cells cells,
+                                         int rowIndex,
+                                         SummarySheetDTO.CorporateIncomeTaxItem subtotal) {
+        String seq = extractLeadingInteger(subtotal == null ? null : subtotal.getSeqNo());
+        if (seq.isBlank()) {
+            seq = extractLeadingInteger(subtotal == null ? null : subtotal.getProjectName());
+        }
+        if (seq.isBlank()) {
+            seq = extractLeadingInteger(subtotal == null ? null : subtotal.getPreferentialPeriod());
+        }
+        cells.get(rowIndex, SummaryColumnMapping.COL_SEQ).putValue(seq);
+
+        String taxType = firstNonBlank(
+                subtotal == null ? null : subtotal.getProjectName(),
+                subtotal == null ? null : subtotal.getPreferentialPeriod(),
+                "企业所得税合计"
+        );
+        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_TYPE).putValue(taxType);
     }
 
     private void fillFinalTotal(Cells cells,
@@ -558,8 +619,31 @@ public class SummaryTemplateRenderService {
         String periodText = summaryData.getLedgerPeriod() == null ? "" : summaryData.getLedgerPeriod();
         replaceToken(summarySheet, "{{title}}", title);
         replacePeriodToken(summarySheet, "{{periodText}}", periodText, periodYm);
+        replaceCitQuarterLabels(summarySheet, periodYm);
         replaceToken(summarySheet, "{{declaredTotal}}", "");
         replaceToken(summarySheet, "{{bookTotal}}", "");
+    }
+
+    private void replaceCitQuarterLabels(Worksheet summarySheet, YearMonth periodYm) {
+        if (periodYm == null) {
+            replaceToken(summarySheet, "{{citQ1Label}}", "Q1应缴税额");
+            replaceToken(summarySheet, "{{citQ2Label}}", "Q2应缴税额");
+            replaceToken(summarySheet, "{{citQ3Label}}", "Q3应缴税额");
+            replaceToken(summarySheet, "{{citQ4Label}}", "Q4应缴税额");
+            return;
+        }
+        int month = periodYm.getMonthValue();
+        int currentQuarter = ((month - 1) / 3) + 1;
+        String[] labels = new String[4];
+        for (int i = 0; i < 4; i++) {
+            int quarter = ((currentQuarter - 1 + i) % 4) + 1;
+            boolean ended = month >= quarter * 3;
+            labels[i] = "Q" + quarter + (ended ? "已缴税额" : "应缴税额");
+        }
+        replaceToken(summarySheet, "{{citQ1Label}}", labels[0]);
+        replaceToken(summarySheet, "{{citQ2Label}}", labels[1]);
+        replaceToken(summarySheet, "{{citQ3Label}}", labels[2]);
+        replaceToken(summarySheet, "{{citQ4Label}}", labels[3]);
     }
 
     private void replacePeriodToken(Worksheet sheet, String token, String fallbackText, YearMonth periodYm) {
@@ -694,8 +778,9 @@ public class SummaryTemplateRenderService {
         return toColumnName(colIndex) + (rowIndex + 1);
     }
 
-    private void putIfNotNull(Cells cells, int row, int col, Object value) {
+    private void putValueOrBlank(Cells cells, int row, int col, Object value) {
         if (value == null) {
+            clearCell(cells, row, col);
             return;
         }
         if (value instanceof BigDecimal) {
@@ -706,16 +791,19 @@ public class SummaryTemplateRenderService {
         cells.get(row, col).putValue(value);
     }
 
-    private void putSeqIfNotNull(Cells cells, int row, int col, Integer value) {
+    private void putSeq(Cells cells, int row, int col, Object value) {
         if (value == null) {
+            clearCell(cells, row, col);
             return;
         }
-        cells.get(row, col).putValue(String.valueOf(value));
+        String text = String.valueOf(value).trim();
+        cells.get(row, col).putValue(text);
     }
 
     private void clearCell(Cells cells, int row, int col) {
         cells.get(row, col).putValue("");
     }
+
 
     private boolean isStampSubtotalRow(SummarySheetDTO.StampDutyItem row) {
         if (row == null) {
@@ -728,6 +816,29 @@ public class SummaryTemplateRenderService {
 
     private String normalizeText(String text) {
         return text == null ? "" : text.replace("\u00A0", " ").trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String extractLeadingInteger(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        Matcher matcher = LEADING_INTEGER.matcher(text);
+        if (!matcher.matches()) {
+            return "";
+        }
+        return matcher.group(1);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private void mergeSameTextCells(Cells cells, int startRow, int endRow, int colIndex) {
@@ -772,6 +883,15 @@ public class SummaryTemplateRenderService {
         }
     }
 
+    private void mergeCitHeaderAndDetail(Cells cells, int headerRow, int detailEndRow) {
+        if (detailEndRow <= headerRow) {
+            return;
+        }
+        int count = detailEndRow - headerRow + 1;
+        cells.merge(headerRow, SummaryColumnMapping.COL_SEQ, count, 1);
+        cells.merge(headerRow, SummaryColumnMapping.COL_TAX_TYPE, count, 1);
+    }
+
     private boolean isCommonSubtotalRow(SummarySheetDTO.CommonTaxItem row) {
         if (row == null) {
             return false;
@@ -808,6 +928,15 @@ public class SummaryTemplateRenderService {
     private void addIfNotNull(List<Integer> list, Integer value) {
         if (value != null) {
             list.add(value);
+        }
+    }
+
+    private void addRowsIfValid(List<Integer> rows, Integer startRow, Integer endRow) {
+        if (startRow == null || endRow == null || startRow > endRow) {
+            return;
+        }
+        for (int row = startRow; row <= endRow; row++) {
+            rows.add(row);
         }
     }
 
@@ -890,11 +1019,23 @@ public class SummaryTemplateRenderService {
         private final int nextCursor;
         private final Integer declaredSubtotalRow;
         private final Integer bookSubtotalRow;
+        private final Integer detailStartRow;
+        private final Integer detailEndRow;
 
         private SectionResult(int nextCursor, Integer declaredSubtotalRow, Integer bookSubtotalRow) {
+            this(nextCursor, declaredSubtotalRow, bookSubtotalRow, null, null);
+        }
+
+        private SectionResult(int nextCursor,
+                              Integer declaredSubtotalRow,
+                              Integer bookSubtotalRow,
+                              Integer detailStartRow,
+                              Integer detailEndRow) {
             this.nextCursor = nextCursor;
             this.declaredSubtotalRow = declaredSubtotalRow;
             this.bookSubtotalRow = bookSubtotalRow;
+            this.detailStartRow = detailStartRow;
+            this.detailEndRow = detailEndRow;
         }
 
         private int getNextCursor() {
@@ -907,6 +1048,14 @@ public class SummaryTemplateRenderService {
 
         private Integer getBookSubtotalRow() {
             return bookSubtotalRow;
+        }
+
+        private Integer getDetailStartRow() {
+            return detailStartRow;
+        }
+
+        private Integer getDetailEndRow() {
+            return detailEndRow;
         }
     }
 }

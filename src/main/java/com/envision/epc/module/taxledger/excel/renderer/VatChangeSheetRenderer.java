@@ -123,12 +123,8 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
     private void writeAmountCell(Cells cells, int row, int col, BigDecimal value) {
         Cell cell = cells.get(row, col);
         Style style = buildBodyAmountStyle(cells);
-        if (value == null) {
-            cell.putValue("-");
-            style.setCustom("@");
-        } else {
-            cell.putValue(value.doubleValue());
-        }
+        BigDecimal amount = value == null ? BigDecimal.ZERO : value;
+        cell.putValue(amount.doubleValue());
         cell.setStyle(style);
     }
 
@@ -164,7 +160,7 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
         Style style = cells.get(1, 3).getStyle();
         style.setHorizontalAlignment(TextAlignmentType.RIGHT);
         style.setVerticalAlignment(TextAlignmentType.CENTER);
-        style.setCustom("#,##0.00;-#,##0.00;-");
+        style.setCustom("_(* #,##0.00_);_(* (#,##0.00);_(* \"-\"??_);_(@_)");
         applyBorder(style);
         return style;
     }
