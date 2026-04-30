@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -194,18 +196,6 @@ public class SummaryTemplateRenderService {
         addIfNotNull(declaredSubtotalRows, vatResult.getDeclaredSubtotalRow());
         addIfNotNull(bookSubtotalRows, vatResult.getBookSubtotalRow());
 
-        SectionResult commonResult = renderSection(
-                templateCells,
-                summaryCells,
-                cursor,
-                new SectionSpec(commonHeaderRow, commonDetailRow, commonSubtotalRow, true, true, true),
-                summaryData.getCommonTaxRows(),
-                this::fillCommonDetailRow
-        );
-        cursor = commonResult.getNextCursor();
-        addIfNotNull(declaredSubtotalRows, commonResult.getDeclaredSubtotalRow());
-        addIfNotNull(bookSubtotalRows, commonResult.getBookSubtotalRow());
-
         SectionResult citResult = renderCitSection(
                 templateCells,
                 summaryCells,
@@ -215,6 +205,18 @@ public class SummaryTemplateRenderService {
         );
         cursor = citResult.getNextCursor();
         addIfNotNull(declaredSubtotalRows, citResult.getDeclaredSubtotalRow());
+
+        SectionResult commonResult = renderSection(
+                templateCells,
+                summaryCells,
+                cursor,
+                new SectionSpec(commonHeaderRow, commonDetailRow, commonSubtotalRow, true, true, true, false),
+                summaryData.getCommonTaxRows(),
+                this::fillCommonDetailRow
+        );
+        cursor = commonResult.getNextCursor();
+        addIfNotNull(declaredSubtotalRows, commonResult.getDeclaredSubtotalRow());
+        addIfNotNull(bookSubtotalRows, commonResult.getBookSubtotalRow());
 
         insertRowCopy(summaryCells, templateCells, finalTotalRow, cursor);
         fillFinalTotal(summaryCells, cursor, summaryData.getFinalTotal(), declaredSubtotalRows, bookSubtotalRows);
@@ -264,7 +266,9 @@ public class SummaryTemplateRenderService {
             detailEnd = cursor;
             cursor++;
         }
+        mergeSeqCellsByTaxTypeGroup(summaryCells, detailStart, detailEnd);
         mergeSameTextCells(summaryCells, detailStart, detailEnd, SummaryColumnMapping.COL_TAX_TYPE);
+        mergeSameTextCells(summaryCells, detailStart, detailEnd, SummaryColumnMapping.COL_TAX_BASIS_DESC);
 
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.STAMP_SUBTOTAL_ROW, cursor);
         fillStampSubtotalRow(summaryCells, cursor, providedSubtotal, detailStart, detailEnd);
@@ -309,13 +313,11 @@ public class SummaryTemplateRenderService {
             detailEnd = cursor;
             cursor++;
         }
+        mergeSeqCellsByTaxTypeGroup(summaryCells, detailStart, detailEnd);
         mergeSameTextCells(summaryCells, detailStart, detailEnd, SummaryColumnMapping.COL_TAX_TYPE);
 
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.VAT_SUBTOTAL_ROW, cursor);
-        if (providedSubtotal != null) {
-            fillCommonDetailRow(summaryCells, cursor, providedSubtotal);
-        }
-        fillCommonSubtotalRow(summaryCells, cursor, detailStart, detailEnd, true, true);
+        fillVatSubtotalRow(summaryCells, cursor, providedSubtotal, detailStart, detailEnd);
         log.info("summary vat section rendered: detailCount={}, subtotalRow={}", detailRows.size(), cursor + 1);
         return new SectionResult(cursor + 1, cursor, cursor);
     }
@@ -330,7 +332,9 @@ public class SummaryTemplateRenderService {
             return new SectionResult(cursor, null, null);
         }
 
-        insertRowCopy(summaryCells, templateCells, spec.getHeaderTemplateRow(), cursor++);
+        if (spec.isWithHeader()) {
+            insertRowCopy(summaryCells, templateCells, spec.getHeaderTemplateRow(), cursor++);
+        }
         int detailStart = cursor;
         for (T row : rows) {
             insertRowCopy(summaryCells, templateCells, spec.getDetailTemplateRow(), cursor);
@@ -339,6 +343,7 @@ public class SummaryTemplateRenderService {
         }
         int detailEnd = cursor - 1;
         if (spec.isMergeTaxType()) {
+            mergeSeqCellsByTaxTypeGroup(summaryCells, detailStart, detailEnd);
             mergeSameTextCells(summaryCells, detailStart, detailEnd, SummaryColumnMapping.COL_TAX_TYPE);
         }
 
@@ -400,7 +405,7 @@ public class SummaryTemplateRenderService {
         if (row == null) {
             return;
         }
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
+        putSeqIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
@@ -423,6 +428,14 @@ public class SummaryTemplateRenderService {
             fillStampDetailRow(cells, rowIndex, subtotal);
         }
         cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        // 印花税小计行：按展示口径，清空非汇总字段，仅保留“实际应纳税额(D)”为汇总公式。
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON);
         if (detailStart <= detailEnd) {
             setSumFormula(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, detailStart, detailEnd);
         } else if (subtotal == null) {
@@ -450,11 +463,38 @@ public class SummaryTemplateRenderService {
         }
     }
 
+    private void fillVatSubtotalRow(Cells cells,
+                                    int rowIndex,
+                                    SummarySheetDTO.CommonTaxItem subtotal,
+                                    int detailStart,
+                                    int detailEnd) {
+        if (subtotal != null) {
+            fillCommonDetailRow(cells, rowIndex, subtotal);
+        }
+        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue("小计");
+        // 增值税小计行：按展示口径，清空非汇总字段；D列优先使用字段值，不做强制公司合计。
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT);
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON);
+
+        if (subtotal == null || subtotal.getActualTaxPayable() == null) {
+            if (detailStart <= detailEnd) {
+                setSumFormula(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, detailStart, detailEnd);
+            } else {
+                cells.get(rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT).putValue(0);
+            }
+        }
+    }
+
     private void fillCommonDetailRow(Cells cells, int rowIndex, SummarySheetDTO.CommonTaxItem row) {
         if (row == null) {
             return;
         }
-        putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
+        putSeqIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_SEQ, row.getSeqNo());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
         putIfNotNull(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
@@ -514,11 +554,35 @@ public class SummaryTemplateRenderService {
 
     private void replaceGlobalTokens(Worksheet summarySheet, SummarySheetDTO summaryData) {
         String title = buildSummaryTitle(summaryData.getCompanyName(), summaryData.getLedgerPeriod());
+        YearMonth periodYm = parseYearMonth(summaryData.getLedgerPeriod());
         String periodText = summaryData.getLedgerPeriod() == null ? "" : summaryData.getLedgerPeriod();
         replaceToken(summarySheet, "{{title}}", title);
-        replaceToken(summarySheet, "{{periodText}}", periodText);
+        replacePeriodToken(summarySheet, "{{periodText}}", periodText, periodYm);
         replaceToken(summarySheet, "{{declaredTotal}}", "");
         replaceToken(summarySheet, "{{bookTotal}}", "");
+    }
+
+    private void replacePeriodToken(Worksheet sheet, String token, String fallbackText, YearMonth periodYm) {
+        Cells cells = sheet.getCells();
+        int maxRow = cells.getMaxRow();
+        int maxCol = cells.getMaxColumn();
+        for (int row = 0; row <= maxRow; row++) {
+            for (int col = 0; col <= maxCol; col++) {
+                String value = cells.get(row, col).getStringValue();
+                if (value == null || value.isEmpty() || !value.contains(token)) {
+                    continue;
+                }
+                if (token.equals(value.trim()) && periodYm != null) {
+                    LocalDate firstDay = periodYm.atDay(1);
+                    cells.get(row, col).putValue(Date.from(firstDay.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()));
+                    continue;
+                }
+                String replacement = periodYm == null
+                        ? fallbackText
+                        : periodYm.getYear() + "/" + periodYm.getMonthValue() + "/1";
+                cells.get(row, col).putValue(value.replace(token, replacement));
+            }
+        }
     }
 
     private String buildSummaryTitle(String companyName, String ledgerPeriod) {
@@ -642,6 +706,17 @@ public class SummaryTemplateRenderService {
         cells.get(row, col).putValue(value);
     }
 
+    private void putSeqIfNotNull(Cells cells, int row, int col, Integer value) {
+        if (value == null) {
+            return;
+        }
+        cells.get(row, col).putValue(String.valueOf(value));
+    }
+
+    private void clearCell(Cells cells, int row, int col) {
+        cells.get(row, col).putValue("");
+    }
+
     private boolean isStampSubtotalRow(SummarySheetDTO.StampDutyItem row) {
         if (row == null) {
             return false;
@@ -670,6 +745,27 @@ public class SummaryTemplateRenderService {
             int count = row - groupStart;
             if (count > 1 && current != null && !current.isBlank()) {
                 cells.merge(groupStart, colIndex, count, 1);
+            }
+            groupStart = row;
+            current = text;
+        }
+    }
+
+    private void mergeSeqCellsByTaxTypeGroup(Cells cells, int startRow, int endRow) {
+        if (startRow >= endRow) {
+            return;
+        }
+        int groupStart = startRow;
+        String current = normalizeText(cells.get(startRow, SummaryColumnMapping.COL_TAX_TYPE).getStringValue());
+        for (int row = startRow + 1; row <= endRow + 1; row++) {
+            String text = row <= endRow ? normalizeText(cells.get(row, SummaryColumnMapping.COL_TAX_TYPE).getStringValue()) : null;
+            boolean same = row <= endRow && text.equals(current);
+            if (same) {
+                continue;
+            }
+            int count = row - groupStart;
+            if (count > 1 && current != null && !current.isBlank()) {
+                cells.merge(groupStart, SummaryColumnMapping.COL_SEQ, count, 1);
             }
             groupStart = row;
             current = text;
@@ -726,13 +822,14 @@ public class SummaryTemplateRenderService {
         private final boolean withDeclaredSubtotal;
         private final boolean withBookSubtotal;
         private final boolean mergeTaxType;
+        private final boolean withHeader;
 
         private SectionSpec(int headerTemplateRow,
                             int detailTemplateRow,
                             int subtotalTemplateRow,
                             boolean withDeclaredSubtotal,
                             boolean withBookSubtotal) {
-            this(headerTemplateRow, detailTemplateRow, subtotalTemplateRow, withDeclaredSubtotal, withBookSubtotal, false);
+            this(headerTemplateRow, detailTemplateRow, subtotalTemplateRow, withDeclaredSubtotal, withBookSubtotal, false, true);
         }
 
         private SectionSpec(int headerTemplateRow,
@@ -741,12 +838,23 @@ public class SummaryTemplateRenderService {
                             boolean withDeclaredSubtotal,
                             boolean withBookSubtotal,
                             boolean mergeTaxType) {
+            this(headerTemplateRow, detailTemplateRow, subtotalTemplateRow, withDeclaredSubtotal, withBookSubtotal, mergeTaxType, true);
+        }
+
+        private SectionSpec(int headerTemplateRow,
+                            int detailTemplateRow,
+                            int subtotalTemplateRow,
+                            boolean withDeclaredSubtotal,
+                            boolean withBookSubtotal,
+                            boolean mergeTaxType,
+                            boolean withHeader) {
             this.headerTemplateRow = headerTemplateRow;
             this.detailTemplateRow = detailTemplateRow;
             this.subtotalTemplateRow = subtotalTemplateRow;
             this.withDeclaredSubtotal = withDeclaredSubtotal;
             this.withBookSubtotal = withBookSubtotal;
             this.mergeTaxType = mergeTaxType;
+            this.withHeader = withHeader;
         }
 
         private int getHeaderTemplateRow() {
@@ -771,6 +879,10 @@ public class SummaryTemplateRenderService {
 
         private boolean isMergeTaxType() {
             return mergeTaxType;
+        }
+
+        private boolean isWithHeader() {
+            return withHeader;
         }
     }
 

@@ -58,12 +58,12 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
         int headerRow = 0;
         int dataStartRow = 1;
 
-        // 前两列(A/B)按业务要求不渲染：仅渲染C~G列
+        // 前两列(基础条目/拆分依据)不渲染，主表从A列顶格开始
         String[] headers = new String[]{
                 "条目", "未开票金额", "当月开票金额", "以前月度开票金额", "合计"
         };
         for (int i = 0; i < headers.length; i++) {
-            int col = i + 2;
+            int col = i;
             Cell cell = cells.get(headerRow, col);
             cell.putValue(headers[i]);
             cell.setStyle(buildHeaderStyle(cells));
@@ -72,11 +72,11 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
         for (int i = 0; i < rows.size(); i++) {
             VatChangeRowDTO row = rows.get(i);
             int r = dataStartRow + i;
-            writeTextCell(cells, r, 2, row == null ? "" : row.getItemName());
-            writeAmountCell(cells, r, 3, row == null ? null : row.getUnbilledAmount());
-            writeAmountCell(cells, r, 4, row == null ? null : row.getCurrentMonthInvoicedAmount());
-            writeAmountCell(cells, r, 5, row == null ? null : row.getPreviousMonthInvoicedAmount());
-            writeAmountCell(cells, r, 6, row == null ? null : row.getTotalAmount());
+            writeTextCell(cells, r, 0, row == null ? "" : row.getItemName());
+            writeAmountCell(cells, r, 1, row == null ? null : row.getUnbilledAmount());
+            writeAmountCell(cells, r, 2, row == null ? null : row.getCurrentMonthInvoicedAmount());
+            writeAmountCell(cells, r, 3, row == null ? null : row.getPreviousMonthInvoicedAmount());
+            writeAmountCell(cells, r, 4, row == null ? null : row.getTotalAmount());
         }
         applyColumnWidths(cells);
         return rows.isEmpty() ? headerRow : dataStartRow + rows.size() - 1;
@@ -133,13 +133,11 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
     }
 
     private void applyColumnWidths(Cells cells) {
-        cells.setColumnWidth(0, 8);
-        cells.setColumnWidth(1, 8);
-        cells.setColumnWidth(2, 30);
-        cells.setColumnWidth(3, 16);
+        cells.setColumnWidth(0, 30);
+        cells.setColumnWidth(1, 16);
+        cells.setColumnWidth(2, 16);
+        cells.setColumnWidth(3, 18);
         cells.setColumnWidth(4, 16);
-        cells.setColumnWidth(5, 18);
-        cells.setColumnWidth(6, 16);
     }
 
     private Style buildHeaderStyle(Cells cells) {
