@@ -315,6 +315,7 @@ public class SummaryTemplateRenderService {
         for (SummarySheetDTO.CommonTaxItem row : detailRows) {
             insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.VAT_DETAIL_ROW, cursor);
             fillCommonDetailRow(summaryCells, cursor, row);
+            fillVatDetailVarianceFormula(summaryCells, cursor);
             detailEnd = cursor;
             cursor++;
         }
@@ -344,6 +345,7 @@ public class SummaryTemplateRenderService {
         for (T row : rows) {
             insertRowCopy(summaryCells, templateCells, spec.getDetailTemplateRow(), cursor);
             rowWriter.write(summaryCells, cursor, row);
+            fillCommonDetailVarianceFormula(summaryCells, cursor);
             cursor++;
         }
         int detailEnd = cursor - 1;
@@ -530,6 +532,18 @@ public class SummaryTemplateRenderService {
         }
     }
 
+    private void fillVatDetailVarianceFormula(Cells cells, int rowIndex) {
+        String declaredCell = toCellRef(rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT);
+        String bookCell = toCellRef(rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT);
+        cells.get(rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT).setFormula(declaredCell + "-" + bookCell);
+    }
+
+    private void fillCommonDetailVarianceFormula(Cells cells, int rowIndex) {
+        String declaredCell = toCellRef(rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT);
+        String bookCell = toCellRef(rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT);
+        cells.get(rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT).setFormula(declaredCell + "-" + bookCell);
+    }
+
     private void fillCommonDetailRow(Cells cells, int rowIndex, SummarySheetDTO.CommonTaxItem row) {
         if (row == null) {
             return;
@@ -596,9 +610,6 @@ public class SummaryTemplateRenderService {
                                 SummarySheetDTO.FinalTotalItem totalItem,
                                 List<Integer> declaredSubtotalRows,
                                 List<Integer> bookSubtotalRows) {
-        String title = totalItem != null && totalItem.getTotalTitle() != null ? totalItem.getTotalTitle() : "合计";
-        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC).putValue(title);
-
         if (declaredSubtotalRows.isEmpty()) {
             cells.get(rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT).putValue(0);
         } else {
@@ -617,11 +628,22 @@ public class SummaryTemplateRenderService {
         String title = buildSummaryTitle(summaryData.getCompanyName(), summaryData.getLedgerPeriod());
         YearMonth periodYm = parseYearMonth(summaryData.getLedgerPeriod());
         String periodText = summaryData.getLedgerPeriod() == null ? "" : summaryData.getLedgerPeriod();
+        String finalTotalTitle = resolveFinalTotalTitle(summaryData);
         replaceToken(summarySheet, "{{title}}", title);
         replacePeriodToken(summarySheet, "{{periodText}}", periodText, periodYm);
+        replaceStampQuarterMonthLabels(summarySheet, periodYm);
         replaceCitQuarterLabels(summarySheet, periodYm);
+        replaceToken(summarySheet, "{{finalTotalTitle}}", finalTotalTitle);
         replaceToken(summarySheet, "{{declaredTotal}}", "");
         replaceToken(summarySheet, "{{bookTotal}}", "");
+    }
+
+    private String resolveFinalTotalTitle(SummarySheetDTO summaryData) {
+        if (summaryData == null || summaryData.getFinalTotal() == null) {
+            return "合计";
+        }
+        String text = summaryData.getFinalTotal().getTotalTitle();
+        return text == null || text.isBlank() ? "合计" : text.trim();
     }
 
     private void replaceCitQuarterLabels(Worksheet summarySheet, YearMonth periodYm) {
@@ -644,6 +666,28 @@ public class SummaryTemplateRenderService {
         replaceToken(summarySheet, "{{citQ2Label}}", labels[1]);
         replaceToken(summarySheet, "{{citQ3Label}}", labels[2]);
         replaceToken(summarySheet, "{{citQ4Label}}", labels[3]);
+    }
+
+    private void replaceStampQuarterMonthLabels(Worksheet summarySheet, YearMonth periodYm) {
+        if (periodYm == null) {
+            replaceToken(summarySheet, "{{stampMonth1Label}}", "计税金额-");
+            replaceToken(summarySheet, "{{stampMonth2Label}}", "计税金额-");
+            replaceToken(summarySheet, "{{stampMonth3Label}}", "计税金额-");
+            return;
+        }
+        int month = periodYm.getMonthValue();
+        int quarterStartMonth = ((month - 1) / 3) * 3 + 1;
+        YearMonth m1 = YearMonth.of(periodYm.getYear(), quarterStartMonth);
+        YearMonth m2 = m1.plusMonths(1);
+        YearMonth m3 = m1.plusMonths(2);
+        replaceToken(summarySheet, "{{stampMonth1Label}}", buildStampMonthLabel(m1));
+        replaceToken(summarySheet, "{{stampMonth2Label}}", buildStampMonthLabel(m2));
+        replaceToken(summarySheet, "{{stampMonth3Label}}", buildStampMonthLabel(m3));
+    }
+
+    private String buildStampMonthLabel(YearMonth ym) {
+        String mm = String.format("%02d", ym.getMonthValue());
+        return "计税金额-" + ym.getYear() + "年" + mm + "月";
     }
 
     private void replacePeriodToken(Worksheet sheet, String token, String fallbackText, YearMonth periodYm) {
