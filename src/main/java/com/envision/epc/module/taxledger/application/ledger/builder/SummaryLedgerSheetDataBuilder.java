@@ -9,6 +9,7 @@ import com.envision.epc.module.taxledger.application.dto.VatChangeRowDTO;
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetDataBuilder;
+import com.envision.epc.module.taxledger.application.ledger.SummaryQuarterSnapshot;
 import com.envision.epc.module.taxledger.application.ledger.data.SummaryLedgerSheetData;
 import com.envision.epc.module.taxledger.application.ledger.data.VatChangeLedgerSheetData;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -81,7 +83,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
             }
 
             if (normalizedTaxType.contains("印花税")) {
-                stampRows.add(buildStampRow(config, taxType, taxItem, rowSeqNo, stampAggMap, issues));
+                stampRows.add(buildStampRow(config, taxType, taxItem, rowSeqNo, stampAggMap, issues, ctx));
                 continue;
             }
             if (normalizedTaxType.contains("企业所得税")) {
@@ -123,7 +125,8 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
                                                         String taxItem,
                                                         Integer rowSeqNo,
                                                         Map<String, StampAgg> stampAggMap,
-                                                        List<String> issues) {
+                                                        List<String> issues,
+                                                        LedgerBuildContext ctx) {
         SummarySheetDTO.StampDutyItem row = new SummarySheetDTO.StampDutyItem();
         row.setSeqNo(rowSeqNo);
         row.setTaxType(taxType);
@@ -134,10 +137,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         BigDecimal taxBase = zeroIfNull(agg == null ? null : agg.taxableAmount);
         BigDecimal levyRatio = normalizeRatio(config.getCollectionRatio());
         BigDecimal taxRate = config.getTaxRate() != null ? config.getTaxRate() : zeroIfNull(agg == null ? null : agg.taxRate);
-        BigDecimal actual = zeroIfNull(agg == null ? null : agg.taxPayableAmount);
-        if (actual.signum() == 0 && taxBase.signum() != 0 && taxRate.signum() != 0) {
-            actual = taxBase.multiply(levyRatio).multiply(taxRate);
-        }
+        BigDecimal actual = taxBase.multiply(levyRatio).multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
 
         if (agg == null && taxItem != null && !taxItem.isBlank()) {
             issues.add("印花税未命中税目数据，按0处理: " + taxItem);
@@ -147,11 +147,26 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         row.setLevyRatio(levyRatio);
         row.setTaxRate(taxRate);
         row.setActualTaxPayable(actual);
-        row.setTaxBaseMonth1(BigDecimal.ZERO);
-        row.setTaxBaseMonth2(BigDecimal.ZERO);
-        row.setTaxBaseMonth3(BigDecimal.ZERO);
+        applyStampQuarterMonthValues(row, taxItem, ctx.getSummaryQuarterSnapshot());
         row.setVarianceReason("");
         return row;
+    }
+
+    private void applyStampQuarterMonthValues(SummarySheetDTO.StampDutyItem row,
+                                              String taxItem,
+                                              SummaryQuarterSnapshot snapshot) {
+        if (!isSaleContractItem(taxItem) || snapshot == null || snapshot.getQuarterMonths() == null
+                || snapshot.getQuarterMonths().size() < 3 || snapshot.getPlMainRevenueByMonth() == null) {
+            row.setTaxBaseMonth1(null);
+            row.setTaxBaseMonth2(null);
+            row.setTaxBaseMonth3(null);
+            return;
+        }
+        List<String> months = snapshot.getQuarterMonths();
+        Map<String, BigDecimal> monthValue = snapshot.getPlMainRevenueByMonth();
+        row.setTaxBaseMonth1(monthValue.get(months.get(0)));
+        row.setTaxBaseMonth2(monthValue.get(months.get(1)));
+        row.setTaxBaseMonth3(monthValue.get(months.get(2)));
     }
 
     private SummarySheetDTO.CommonTaxItem buildCommonRow(TaxCategoryConfig config,
@@ -461,6 +476,14 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
 
     private String safeText(String value) {
         return Objects.requireNonNullElse(normalizeText(value), "");
+    }
+
+    private boolean isSaleContractItem(String taxItem) {
+        if (taxItem == null) {
+            return false;
+        }
+        String text = taxItem.replace(" ", "").trim();
+        return "买卖合同".equals(text);
     }
 
     private boolean isVatTaxType(String taxType) {

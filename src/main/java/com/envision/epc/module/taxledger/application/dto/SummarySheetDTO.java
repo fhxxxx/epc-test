@@ -6,6 +6,10 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Data
+/**
+ * Summary 页渲染数据对象。
+ * <p>对应台账 Sheet：Summary；用于承载 Summary 页四大分段与总计区的最终展示数据。</p>
+ */
 public class SummarySheetDTO {
 
     /** 公司名称（表头） */
@@ -30,6 +34,9 @@ public class SummarySheetDTO {
     private FinalTotalItem finalTotal;
 
     @Data
+    /**
+     * Summary 页-印花税分段行对象。
+     */
     public static class StampDutyItem {
         private Integer seqNo;
         private String taxType;
@@ -46,6 +53,9 @@ public class SummarySheetDTO {
     }
 
     @Data
+    /**
+     * Summary 页-公共税种/增值税分段行对象。
+     */
     public static class CommonTaxItem {
         private Integer seqNo;
         private String taxType;
@@ -62,6 +72,9 @@ public class SummarySheetDTO {
     }
 
     @Data
+    /**
+     * Summary 页-企业所得税分段行对象。
+     */
     public static class CorporateIncomeTaxItem {
         private String seqNo;
         private String projectName;
@@ -83,6 +96,9 @@ public class SummarySheetDTO {
     }
 
     @Data
+    /**
+     * Summary 页-全表总计对象。
+     */
     public static class FinalTotalItem {
         private String totalTitle;
         /** 兼容保留：渲染时不使用，最终合计由公式生成 */

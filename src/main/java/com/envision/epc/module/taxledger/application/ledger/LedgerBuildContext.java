@@ -34,6 +34,8 @@ public class LedgerBuildContext {
     Map<FileCategoryEnum, Object> preloadedParsedData;
     /** 构建摘要信息容器，主要用于报告/日志输出（如 preload 统计、issues），不承载业务互通数据。 */
     Map<String, Object> preloadSummary;
+    /** Summary 季度预取快照（印花税 I/J/K 月度值等跨月数据）。 */
+    SummaryQuarterSnapshot summaryQuarterSnapshot;
     /** 构建期产物总线：已完成 builder 的 sheetData 映射，供后续 builder 直接读取前序产物。 */
     Map<LedgerSheetCode, LedgerSheetData> builtSheetDataMap;
 

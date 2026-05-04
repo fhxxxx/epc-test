@@ -14,6 +14,7 @@ import com.envision.epc.module.taxledger.application.ledger.LedgerParsedDataGate
 import com.envision.epc.module.taxledger.application.ledger.LedgerParsedDataGatewayFactory;
 import com.envision.epc.module.taxledger.application.ledger.ParsedResultTypeCatalog;
 import com.envision.epc.module.taxledger.application.ledger.LedgerRenderContext;
+import com.envision.epc.module.taxledger.application.ledger.SummaryQuarterSnapshot;
 import com.envision.epc.module.taxledger.application.ledger.LedgerWorkbookData;
 import com.envision.epc.module.taxledger.application.ledger.LedgerWorkbookDataAssembler;
 import com.envision.epc.module.taxledger.domain.CompanyCodeConfig;
@@ -90,6 +91,7 @@ public class TaxLedgerService {
     private final LedgerParsedDataGatewayFactory parsedDataGatewayFactory;
     private final LedgerWorkbookDataAssembler workbookDataAssembler;
     private final TaxLedgerExcelService excelService;
+    private final SummaryQuarterDataPreparer summaryQuarterDataPreparer;
     private final PermissionService permissionService;
     private final TaskExecutor taskExecutor;
     private final ObjectMapper objectMapper;
@@ -473,6 +475,10 @@ public class TaxLedgerService {
         LedgerConfigSnapshot configSnapshot = loadConfigSnapshot(ledger.getCompanyCode());
         Map<String, Object> preloadSummary = new LinkedHashMap<>(preload.summary());
         preloadSummary.put("configSnapshot", configSnapshot.summary());
+        SummaryQuarterSnapshot summaryQuarterSnapshot = summaryQuarterDataPreparer.prepare(ledger.getCompanyCode(), ledger.getYearMonth());
+        preloadSummary.put("summaryQuarterMonths", summaryQuarterSnapshot.getQuarterMonths());
+        preloadSummary.put("summaryMissingPlMonths", summaryQuarterSnapshot.getMissingMonths());
+        preloadSummary.put("summaryQuarterWarnings", summaryQuarterSnapshot.getWarnings());
 
         LedgerBuildContext context = LedgerBuildContext.builder()
                 .companyCode(ledger.getCompanyCode())
@@ -484,6 +490,7 @@ public class TaxLedgerService {
                 .configSnapshot(configSnapshot)
                 .preloadedParsedData(preload.preloadedParsedData())
                 .preloadSummary(preloadSummary)
+                .summaryQuarterSnapshot(summaryQuarterSnapshot)
                 .builtSheetDataMap(new LinkedHashMap<>())
                 .build();
         log.info("ledger context built: runId={}, companyCode={}, yearMonth={}, filesCount={}, preloadTotal={}, preloadSuccess={}, preloadFailed={}, preloadSkipped={}, failedCategories={}",

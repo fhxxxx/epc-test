@@ -6,6 +6,11 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 @Data
+/**
+ * 印花税解析汇总行 DTO（解析层对象）。
+ * <p>来源：{@code StampTaxSheetParser}，用于解析 FileCategoryEnum.STAMP_TAX 文件中“汇总”区域表格。</p>
+ * <p>用途：作为 Summary 构建阶段的输入数据之一，后续会映射为 {@code SummarySheetDTO.StampDutyItem}。</p>
+ */
 public class StampDutySummaryRowDTO {
 
     /** 合同类别 */

@@ -16,6 +16,7 @@ import com.envision.epc.module.taxledger.application.dto.VatOutputSheetUploadDTO
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetDataBuilder;
+import com.envision.epc.module.taxledger.application.ledger.data.PlAppendix2320LedgerSheetData;
 import com.envision.epc.module.taxledger.application.ledger.data.VatChangeLedgerSheetData;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
@@ -33,7 +34,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 增值税变动表 页数据构建器。
+ * 增值税变动表页数据构建器。
+ * <p>对应台账 Sheet：{@link LedgerSheetCode#VAT_CHANGE}；负责“基础条目+拆分依据”结构行生成与金额口径计算。</p>
  */
 @Component
 public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChangeLedgerSheetData> {
@@ -68,8 +70,9 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
         MonthlySettlementTaxParsedDTO monthlySettlementTax = null;
         List<PlAppendixProjectCompanyUploadDTO> plAppendixProject = List.of();
         if (is2320Or2355) {
-            plAppendix2320 = SheetDataReaders.requireObject(
-                    ctx, FileCategoryEnum.PL_APPENDIX_2320, PlAppendix23202355DTO.class, LedgerSheetCode.VAT_CHANGE);
+            PlAppendix2320LedgerSheetData plAppendix2320Data = ctx.requireBuilt(
+                    LedgerSheetCode.PL_APPENDIX_2320, PlAppendix2320LedgerSheetData.class, LedgerSheetCode.VAT_CHANGE);
+            plAppendix2320 = plAppendix2320Data == null ? null : plAppendix2320Data.getPayload();
             monthlySettlementTax = SheetDataReaders.requireObject(
                     ctx, FileCategoryEnum.MONTHLY_SETTLEMENT_TAX, MonthlySettlementTaxParsedDTO.class, LedgerSheetCode.VAT_CHANGE);
         } else {
