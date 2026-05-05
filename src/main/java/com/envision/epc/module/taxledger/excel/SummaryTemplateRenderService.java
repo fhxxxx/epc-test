@@ -17,8 +17,10 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -47,6 +49,12 @@ public class SummaryTemplateRenderService {
     private static final String NR_CIT_DETAIL = "NR_CIT_DETAIL_TMPL";
     private static final String NR_CIT_SUBTOTAL = "NR_CIT_SUBTOTAL_TMPL";
     private static final String NR_FINAL_TOTAL = "NR_FINAL_TOTAL_TMPL";
+    private static final String VAT_CHANGE_SHEET_NAME = "增值税变动表";
+    private static final String VAT_ITEM_HEADER = "条目";
+    private static final String VAT_TOTAL_HEADER = "合计";
+    private static final String VAT_ITEM_FIXED_ASSET_DISPOSAL = "销项税额-固定资产处置收入";
+    private static final String VAT_ITEM_FINANCE_INTEREST = "销项税额-财务费用-利息收入";
+    private static final String VAT_ITEM_OTHER_INCOME = "销项税额-其他收益";
 
     private static final SummaryTemplateRowSpec STAMP_HEADER_SPEC = SummaryTemplateRowSpec.of(
             SummaryTemplateNamespace.STAMP_SECTION_HEADER,
@@ -129,7 +137,7 @@ public class SummaryTemplateRenderService {
             }
 
             Worksheet summarySheet = createOutputSheet(workbook, templateSheet);
-            renderSummaryRows(templateWorkbook, templateSheet, summarySheet, summaryData);
+            renderSummaryRows(workbook, templateWorkbook, templateSheet, summarySheet, summaryData);
         }
     }
 
@@ -141,7 +149,8 @@ public class SummaryTemplateRenderService {
         return summarySheet;
     }
 
-    private void renderSummaryRows(Workbook templateWorkbook,
+    private void renderSummaryRows(Workbook outputWorkbook,
+                                   Workbook templateWorkbook,
                                    Worksheet templateSheet,
                                    Worksheet summarySheet,
                                    SummarySheetDTO summaryData) throws Exception {
@@ -189,6 +198,7 @@ public class SummaryTemplateRenderService {
         addIfNotNull(declaredSubtotalRows, stampResult.getDeclaredSubtotalRow());
 
         SectionResult vatResult = renderVatSection(
+                outputWorkbook,
                 templateCells,
                 summaryCells,
                 cursor,
@@ -281,7 +291,8 @@ public class SummaryTemplateRenderService {
         return new SectionResult(cursor + 1, cursor, null);
     }
 
-    private SectionResult renderVatSection(Cells templateCells,
+    private SectionResult renderVatSection(Workbook outputWorkbook,
+                                           Cells templateCells,
                                            Cells summaryCells,
                                            int cursor,
                                            List<SummarySheetDTO.CommonTaxItem> rows,
@@ -307,7 +318,7 @@ public class SummaryTemplateRenderService {
         if (detailRows.isEmpty() && providedSubtotal == null) {
             return new SectionResult(cursor, null, null);
         }
-
+        VatChangeTotalRefIndex vatRefIndex = buildVatChangeTotalRefIndex(outputWorkbook);
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.VAT_SECTION_HEADER, cursor++);
         int detailStart = cursor;
         int detailEnd = cursor - 1;
@@ -315,6 +326,7 @@ public class SummaryTemplateRenderService {
         for (SummarySheetDTO.CommonTaxItem row : detailRows) {
             insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.VAT_DETAIL_ROW, cursor);
             fillCommonDetailRow(summaryCells, cursor, row);
+            applyVatManualBaseFormula(summaryCells, cursor, row, vatRefIndex);
             fillVatDetailVarianceFormula(summaryCells, cursor);
             detailEnd = cursor;
             cursor++;
@@ -560,6 +572,35 @@ public class SummaryTemplateRenderService {
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getBookAmount());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getVarianceAmount());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
+    }
+
+    private void applyVatManualBaseFormula(Cells cells,
+                                           int rowIndex,
+                                           SummarySheetDTO.CommonTaxItem row,
+                                           VatChangeTotalRefIndex vatRefIndex) {
+        if (row == null || vatRefIndex == null || vatRefIndex.empty()) {
+            return;
+        }
+        if (!normalizeText(row.getTaxType()).contains("增值税")) {
+            return;
+        }
+        String taxItem = normalizeCompact(row.getTaxItem());
+        String targetVatItem = null;
+        if (normalizeCompact(VAT_ITEM_FIXED_ASSET_DISPOSAL).equals(taxItem)) {
+            targetVatItem = VAT_ITEM_FIXED_ASSET_DISPOSAL;
+        } else if (normalizeCompact(VAT_ITEM_FINANCE_INTEREST).equals(taxItem)) {
+            targetVatItem = VAT_ITEM_FINANCE_INTEREST;
+        } else if (normalizeCompact(VAT_ITEM_OTHER_INCOME).equals(taxItem)) {
+            targetVatItem = VAT_ITEM_OTHER_INCOME;
+        }
+        if (targetVatItem == null) {
+            return;
+        }
+        String formulaRef = vatRefIndex.getTotalCellRefByItem(targetVatItem);
+        if (formulaRef == null || formulaRef.isBlank()) {
+            return;
+        }
+        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN).setFormula("=" + formulaRef);
     }
 
     private void fillCitSubtotalRow(Cells cells, int rowIndex, int detailStart, int detailEnd) {
@@ -848,6 +889,73 @@ public class SummaryTemplateRenderService {
         cells.get(row, col).putValue("");
     }
 
+    private String normalizeCompact(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("\u00A0", "")
+                .replace(" ", "")
+                .replace("（", "(")
+                .replace("）", ")")
+                .trim();
+    }
+
+    private String escapeSheetName(String sheetName) {
+        if (sheetName == null) {
+            return "";
+        }
+        return sheetName.replace("'", "''");
+    }
+
+    private VatChangeTotalRefIndex buildVatChangeTotalRefIndex(Workbook workbook) {
+        if (workbook == null) {
+            return VatChangeTotalRefIndex.empty();
+        }
+        Worksheet vatSheet = workbook.getWorksheets().get(VAT_CHANGE_SHEET_NAME);
+        if (vatSheet == null) {
+            return VatChangeTotalRefIndex.empty();
+        }
+        Cells cells = vatSheet.getCells();
+        HeaderLocateResult header = locateVatHeader(cells);
+        if (header == null) {
+            return VatChangeTotalRefIndex.empty();
+        }
+        String escapedSheetName = escapeSheetName(vatSheet.getName());
+        VatChangeTotalRefIndex index = new VatChangeTotalRefIndex();
+        int maxRow = cells.getMaxDataRow();
+        for (int row = header.headerRow + 1; row <= maxRow; row++) {
+            String item = normalizeCompact(cells.get(row, header.itemCol).getStringValue());
+            if (item.isBlank()) {
+                continue;
+            }
+            String ref = "'" + escapedSheetName + "'!" + toColumnName(header.totalCol) + (row + 1);
+            index.put(item, ref);
+        }
+        return index;
+    }
+
+    private HeaderLocateResult locateVatHeader(Cells cells) {
+        int maxRow = Math.max(0, cells.getMaxDataRow());
+        int maxCol = Math.max(0, cells.getMaxDataColumn());
+        int scanRows = Math.min(maxRow, 30);
+        for (int row = 0; row <= scanRows; row++) {
+            Integer itemCol = null;
+            Integer totalCol = null;
+            for (int col = 0; col <= maxCol; col++) {
+                String v = normalizeCompact(cells.get(row, col).getStringValue());
+                if (VAT_ITEM_HEADER.equals(v)) {
+                    itemCol = col;
+                } else if (VAT_TOTAL_HEADER.equals(v)) {
+                    totalCol = col;
+                }
+            }
+            if (itemCol != null && totalCol != null) {
+                return new HeaderLocateResult(row, itemCol, totalCol);
+            }
+        }
+        return null;
+    }
+
 
     private boolean isStampSubtotalRow(SummarySheetDTO.StampDutyItem row) {
         if (row == null) {
@@ -1102,4 +1210,51 @@ public class SummaryTemplateRenderService {
             return detailEndRow;
         }
     }
+
+    private static class HeaderLocateResult {
+        private final int headerRow;
+        private final int itemCol;
+        private final int totalCol;
+
+        private HeaderLocateResult(int headerRow, int itemCol, int totalCol) {
+            this.headerRow = headerRow;
+            this.itemCol = itemCol;
+            this.totalCol = totalCol;
+        }
+    }
+
+    private static class VatChangeTotalRefIndex {
+        private final Map<String, String> totalRefByItem = new LinkedHashMap<>();
+
+        private static VatChangeTotalRefIndex empty() {
+            return new VatChangeTotalRefIndex();
+        }
+
+        private void put(String itemName, String cellRef) {
+            if (itemName == null || itemName.isBlank() || cellRef == null || cellRef.isBlank()) {
+                return;
+            }
+            totalRefByItem.putIfAbsent(compact(itemName), cellRef);
+        }
+
+        private String getTotalCellRefByItem(String itemName) {
+            return totalRefByItem.get(compact(itemName));
+        }
+
+        private boolean empty() {
+            return totalRefByItem.isEmpty();
+        }
+
+        private String compact(String text) {
+            if (text == null) {
+                return "";
+            }
+            return text.replace("\u00A0", "")
+                    .replace(" ", "")
+                    .replace("（", "(")
+                    .replace("）", ")")
+                    .trim();
+        }
+    }
+
 }

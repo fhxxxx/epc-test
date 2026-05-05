@@ -33,9 +33,11 @@ public class TaxLedgerExcelService {
                                          LedgerRenderContext renderContext) throws Exception {
         long renderStart = System.currentTimeMillis();
         Workbook workbook = new Workbook();
-        List<Map<String, Object>> sheetReports = new ArrayList<>();
+        Map<LedgerSheetCode, Map<String, Object>> renderReportsByCode = new LinkedHashMap<>();
+        List<LedgerSheetCode> renderExecutionOrder = executionPlan.orderedForRenderExecution(renderContext.getCompanyCode());
+        List<LedgerSheetCode> displayOrder = executionPlan.orderedForDisplay(renderContext.getCompanyCode());
 
-        for (LedgerSheetCode code : executionPlan.orderedForRender(renderContext.getCompanyCode())) {
+        for (LedgerSheetCode code : renderExecutionOrder) {
             LedgerSheetData data = workbookData.required(code);
             @SuppressWarnings("unchecked")
             LedgerSheetRenderer<LedgerSheetData> renderer =
@@ -53,11 +55,20 @@ public class TaxLedgerExcelService {
             sheetReport.put("buildMs", workbookData.getBuildCostMs() == null ? null : workbookData.getBuildCostMs().get(code));
             sheetReport.put("renderMs", elapsed);
             sheetReport.put("rowCount", data.rowCount());
-            sheetReports.add(sheetReport);
+            renderReportsByCode.put(code, sheetReport);
         }
 
         removeDefaultBlankSheet(workbook);
+        reorderWorksheetsByDisplayOrder(workbook, displayOrder);
         workbook.calculateFormula();
+
+        List<Map<String, Object>> sheetReports = new ArrayList<>();
+        for (LedgerSheetCode code : displayOrder) {
+            Map<String, Object> report = renderReportsByCode.get(code);
+            if (report != null) {
+                sheetReports.add(report);
+            }
+        }
 
         byte[] bytes;
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
@@ -77,6 +88,17 @@ public class TaxLedgerExcelService {
                 .workbookBytes(bytes)
                 .buildReport(buildReport)
                 .build();
+    }
+
+    private void reorderWorksheetsByDisplayOrder(Workbook workbook, List<LedgerSheetCode> displayOrder) {
+        int targetIndex = 0;
+        for (LedgerSheetCode code : displayOrder) {
+            Worksheet sheet = workbook.getWorksheets().get(code.getSheetName());
+            if (sheet == null) {
+                continue;
+            }
+            sheet.moveTo(targetIndex++);
+        }
     }
 
     private void removeDefaultBlankSheet(Workbook workbook) {

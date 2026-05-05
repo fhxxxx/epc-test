@@ -46,9 +46,35 @@ public class SheetExecutionPlan {
     );
 
     /**
-     * Renderer 执行顺序（展示顺序）
+     * Renderer 实际执行顺序（依赖顺序）
      */
-    private static final List<LedgerSheetCode> RENDER_PLAN = List.of(
+    private static final List<LedgerSheetCode> RENDER_EXECUTION_PLAN = List.of(
+//            LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355,
+            LedgerSheetCode.CUMULATIVE_PROJECT_TAX,
+//            LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT,
+//            LedgerSheetCode.TAX_ACCOUNTING_DIFFERENCE_MONITOR,
+            LedgerSheetCode.BS,
+            LedgerSheetCode.PL,
+            LedgerSheetCode.DL_INCOME,
+            LedgerSheetCode.DL_OUTPUT,
+            LedgerSheetCode.DL_INPUT,
+            LedgerSheetCode.VAT_OUTPUT,
+            LedgerSheetCode.VAT_INPUT_CERT,
+            LedgerSheetCode.VAT_CHANGE,
+            LedgerSheetCode.SUMMARY,
+            LedgerSheetCode.UNINVOICED_MONITOR,
+            LedgerSheetCode.PROJECT_CUMULATIVE_DECLARATION,
+            LedgerSheetCode.PROJECT_CUMULATIVE_PAYMENT,
+            LedgerSheetCode.DL_OTHER,
+            LedgerSheetCode.CONTRACT_STAMP_DUTY_LEDGER,
+            LedgerSheetCode.STAMP_TAX,
+            LedgerSheetCode.STAMP_TAX_PROJECT
+    );
+
+    /**
+     * Renderer 最终展示顺序（页签顺序）
+     */
+    private static final List<LedgerSheetCode> RENDER_DISPLAY_PLAN = List.of(
 //            LedgerSheetCode.CUMULATIVE_TAX_SUMMARY_2320_2355,
             LedgerSheetCode.CUMULATIVE_PROJECT_TAX,
 //            LedgerSheetCode.VAT_TABLE_ONE_CUMULATIVE_OUTPUT,
@@ -86,7 +112,18 @@ public class SheetExecutionPlan {
     }
 
     public List<LedgerSheetCode> orderedForRender(String companyCode) {
-        return RENDER_PLAN.stream()
+        return orderedForDisplay(companyCode);
+    }
+
+    public List<LedgerSheetCode> orderedForRenderExecution(String companyCode) {
+        return RENDER_EXECUTION_PLAN.stream()
+                .filter(code -> isEnabledForCompany(code, companyCode))
+                .filter(this::isRenderedInFinalLedger)
+                .toList();
+    }
+
+    public List<LedgerSheetCode> orderedForDisplay(String companyCode) {
+        return RENDER_DISPLAY_PLAN.stream()
                 .filter(code -> isEnabledForCompany(code, companyCode))
                 .filter(this::isRenderedInFinalLedger)
                 .toList();
@@ -95,7 +132,8 @@ public class SheetExecutionPlan {
     public List<LedgerSheetCode> allDefined() {
         Set<LedgerSheetCode> merged = new LinkedHashSet<>();
         merged.addAll(BUILD_PLAN);
-        merged.addAll(RENDER_PLAN);
+        merged.addAll(RENDER_EXECUTION_PLAN);
+        merged.addAll(RENDER_DISPLAY_PLAN);
         return new ArrayList<>(merged);
     }
 
@@ -122,13 +160,20 @@ public class SheetExecutionPlan {
 
     private void validatePlanDefinition() {
         assertNoDuplicate("BUILD_PLAN", BUILD_PLAN);
-        assertNoDuplicate("RENDER_PLAN", RENDER_PLAN);
+        assertNoDuplicate("RENDER_EXECUTION_PLAN", RENDER_EXECUTION_PLAN);
+        assertNoDuplicate("RENDER_DISPLAY_PLAN", RENDER_DISPLAY_PLAN);
 
         Set<LedgerSheetCode> buildSet = new LinkedHashSet<>(BUILD_PLAN);
-        for (LedgerSheetCode renderCode : RENDER_PLAN) {
+        for (LedgerSheetCode renderCode : RENDER_EXECUTION_PLAN) {
             if (!buildSet.contains(renderCode)) {
                 throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR,
-                        "Sheet执行计划定义错误: RENDER_PLAN中的sheet未包含在BUILD_PLAN中, sheet=" + renderCode.name());
+                        "Sheet执行计划定义错误: RENDER_EXECUTION_PLAN中的sheet未包含在BUILD_PLAN中, sheet=" + renderCode.name());
+            }
+        }
+        for (LedgerSheetCode renderCode : RENDER_DISPLAY_PLAN) {
+            if (!buildSet.contains(renderCode)) {
+                throw new BizException(ErrorCode.INTERNAL_SERVER_ERROR,
+                        "Sheet执行计划定义错误: RENDER_DISPLAY_PLAN中的sheet未包含在BUILD_PLAN中, sheet=" + renderCode.name());
             }
         }
     }

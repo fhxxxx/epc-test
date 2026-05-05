@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 @Data
 public class VatInputCertParsedDTO {
     /**
-     * 税额合计（SUM(taxAmount)）。
+     * 金额合计（SUM(amount)）。
      */
-    private BigDecimal taxAmountSum;
+    private BigDecimal amountSum;
 }

@@ -61,12 +61,12 @@ public class VatInputCertificationSheetParser implements SheetParser<VatInputCer
                 if (row == null || isTotalRow(row.getSerialNo())) {
                     continue;
                 }
-                if (row.getTaxAmount() != null) {
-                    sum = sum.add(row.getTaxAmount());
+                if (row.getAmount() != null) {
+                    sum = sum.add(row.getAmount());
                 }
             }
             VatInputCertParsedDTO parsed = new VatInputCertParsedDTO();
-            parsed.setTaxAmountSum(sum);
+            parsed.setAmountSum(sum);
             result.setData(parsed);
             return result;
         } catch (Exception e) {
@@ -77,7 +77,7 @@ public class VatInputCertificationSheetParser implements SheetParser<VatInputCer
 
     private VatInputCertParsedDTO emptyResult() {
         VatInputCertParsedDTO dto = new VatInputCertParsedDTO();
-        dto.setTaxAmountSum(BigDecimal.ZERO);
+        dto.setAmountSum(BigDecimal.ZERO);
         return dto;
     }
 

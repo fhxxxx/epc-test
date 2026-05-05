@@ -210,7 +210,7 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
             }
 
             if (isCertifiedInputTax(base)) {
-                row.setTotalAmount(nvl(vatInputCert == null ? null : vatInputCert.getTaxAmountSum()));
+                row.setTotalAmount(nvl(vatInputCert == null ? null : vatInputCert.getAmountSum()));
                 continue;
             }
             if (isOpeningRetainedInputTax(base)) {
