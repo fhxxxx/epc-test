@@ -515,7 +515,36 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
             row.setRemainingLossCarryforward(null);
             rows.add(row);
         }
+        SummarySheetDTO.CorporateIncomeTaxItem subtotalRow = buildCitSubtotalRow(taxConfigs);
+        if (subtotalRow != null) {
+            rows.add(subtotalRow);
+        }
         return rows;
+    }
+
+    private SummarySheetDTO.CorporateIncomeTaxItem buildCitSubtotalRow(List<TaxCategoryConfig> taxConfigs) {
+        if (taxConfigs == null || taxConfigs.isEmpty()) {
+            return null;
+        }
+        for (TaxCategoryConfig cfg : taxConfigs) {
+            if (cfg == null) {
+                continue;
+            }
+            String taxType = normalizeText(cfg.getTaxType());
+            String taxItem = normalizeText(cfg.getTaxCategory());
+            if (!taxType.contains(CIT_TAX_TYPE)) {
+                continue;
+            }
+            if (!isSubtotalLine(taxType, taxItem)) {
+                continue;
+            }
+            SummarySheetDTO.CorporateIncomeTaxItem row = new SummarySheetDTO.CorporateIncomeTaxItem();
+            row.setSeqNo(normalizeText(cfg.getSeqNo()));
+            row.setProjectName(!taxItem.isBlank() ? taxItem : (!taxType.isBlank() ? taxType : "企业所得税合计"));
+            row.setPreferentialPeriod("");
+            return row;
+        }
+        return null;
     }
 
     private List<ProjectConfig> resolveCitProjects(LedgerBuildContext ctx) {

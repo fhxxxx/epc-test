@@ -1,8 +1,11 @@
 package com.envision.epc.module.taxledger.excel;
 
 import com.aspose.cells.Cells;
+import com.aspose.cells.Color;
+import com.aspose.cells.BackgroundType;
 import com.aspose.cells.Name;
 import com.aspose.cells.Range;
+import com.aspose.cells.Style;
 import com.aspose.cells.Workbook;
 import com.aspose.cells.Worksheet;
 import com.envision.epc.infrastructure.response.BizException;
@@ -232,6 +235,8 @@ public class SummaryTemplateRenderService {
                 this::fillCommonDetailRow
         );
         cursor = commonResult.getNextCursor();
+        applyCommonTaxBaseRules(summaryCells, commonResult.getDetailStartRow(), commonResult.getDetailEndRow());
+        applyCommonAlternatingBackground(summaryCells, commonResult.getDetailStartRow(), commonResult.getDetailEndRow());
         addRowsIfValid(declaredSubtotalRows, commonResult.getDetailStartRow(), commonResult.getDetailEndRow());
         addRowsIfValid(bookSubtotalRows, commonResult.getDetailStartRow(), commonResult.getDetailEndRow());
 
@@ -451,18 +456,17 @@ public class SummaryTemplateRenderService {
         }
         mergeCitHeaderAndDetail(summaryCells, sectionHeaderRow, detailEnd);
 
-        insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_SUBTOTAL_ROW, cursor);
         if (providedSubtotal != null) {
+            insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_SUBTOTAL_ROW, cursor);
             fillCitDetailRow(summaryCells, cursor, providedSubtotal, citQuarterColumnMap);
             fillCitSubtotalIdentity(summaryCells, cursor, providedSubtotal);
-        } else {
-            // 无业务小计输入时，清掉模板占位符，避免出现在最终台账。
-            clearCell(summaryCells, cursor, SummaryColumnMapping.COL_SEQ);
-            clearCell(summaryCells, cursor, SummaryColumnMapping.COL_TAX_TYPE);
+            clearCell(summaryCells, cursor, SummaryColumnMapping.COL_TAX_ITEM);
+            fillCitSubtotalRow(summaryCells, cursor, detailStart, detailEnd);
+            log.info("summary cit section rendered: detailCount={}, subtotalRow={}", detailRows.size(), cursor + 1);
+            return new SectionResult(cursor + 1, cursor, null);
         }
-        fillCitSubtotalRow(summaryCells, cursor, detailStart, detailEnd);
-        log.info("summary cit section rendered: detailCount={}, subtotalRow={}", detailRows.size(), cursor + 1);
-        return new SectionResult(cursor + 1, cursor, null);
+        log.info("summary cit section rendered: detailCount={}, subtotalRow=none", detailRows.size());
+        return new SectionResult(cursor, null, null);
     }
 
     private void fillStampDetailRow(Cells cells, int rowIndex, SummarySheetDTO.StampDutyItem row) {
@@ -579,7 +583,7 @@ public class SummaryTemplateRenderService {
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getTaxType());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getTaxItem());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxBasisDesc());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxBaseAmount());
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getLevyRatio());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getTaxRate());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getActualTaxPayable());
@@ -587,6 +591,66 @@ public class SummaryTemplateRenderService {
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getBookAmount());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getVarianceAmount());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getVarianceReason());
+    }
+
+    private void applyCommonTaxBaseRules(Cells cells, Integer detailStartRow, Integer detailEndRow) {
+        if (cells == null || detailStartRow == null || detailEndRow == null || detailStartRow > detailEndRow) {
+            return;
+        }
+        int personalDetailStart = -1;
+        for (int row = detailStartRow; row <= detailEndRow; row++) {
+            String taxType = normalizeText(cells.get(row, SummaryColumnMapping.COL_TAX_TYPE).getStringValue());
+            String taxItem = normalizeText(cells.get(row, SummaryColumnMapping.COL_TAX_ITEM).getStringValue());
+
+            boolean personalSubtotal = taxType.contains("个人所得税合计") || taxItem.contains("个人所得税合计");
+            boolean personalTypeRow = taxType.contains("个人所得税") && !taxType.contains("合计");
+
+            clearCell(cells, row, SummaryColumnMapping.COL_TAX_BASE_MAIN);
+
+            if (personalTypeRow && personalDetailStart < 0) {
+                personalDetailStart = row;
+            }
+
+            if (personalSubtotal) {
+                if (personalDetailStart >= 0 && row - 1 >= personalDetailStart) {
+                    setSumFormula(cells, row, SummaryColumnMapping.COL_TAX_BASE_MAIN, personalDetailStart, row - 1);
+                } else {
+                    clearCell(cells, row, SummaryColumnMapping.COL_TAX_BASE_MAIN);
+                }
+                personalDetailStart = -1;
+                continue;
+            }
+
+            if (!taxType.isBlank() && !personalTypeRow && !taxType.contains("个人所得税")) {
+                personalDetailStart = -1;
+            }
+        }
+    }
+
+    private void applyCommonAlternatingBackground(Cells cells, Integer detailStartRow, Integer detailEndRow) {
+        if (cells == null || detailStartRow == null || detailEndRow == null || detailStartRow > detailEndRow) {
+            return;
+        }
+        boolean darkBlue = true;
+        for (int row = detailStartRow; row <= detailEndRow; row++) {
+            String taxType = normalizeText(cells.get(row, SummaryColumnMapping.COL_TAX_TYPE).getStringValue());
+            String taxItem = normalizeText(cells.get(row, SummaryColumnMapping.COL_TAX_ITEM).getStringValue());
+            if (taxType.contains("个人所得税") || taxItem.contains("个人所得税")) {
+                continue;
+            }
+            Color color = darkBlue ? Color.getCornflowerBlue() : Color.getLightBlue();
+            applyRowBackground(cells, row, SummaryColumnMapping.COL_SEQ, SummaryColumnMapping.COL_VARIANCE_REASON, color);
+            darkBlue = !darkBlue;
+        }
+    }
+
+    private void applyRowBackground(Cells cells, int row, int colStart, int colEnd, Color color) {
+        for (int col = colStart; col <= colEnd; col++) {
+            Style style = cells.get(row, col).getStyle();
+            style.setPattern(BackgroundType.SOLID);
+            style.setForegroundColor(color);
+            cells.get(row, col).setStyle(style);
+        }
     }
 
     private void applyVatManualBaseFormula(Cells cells,
