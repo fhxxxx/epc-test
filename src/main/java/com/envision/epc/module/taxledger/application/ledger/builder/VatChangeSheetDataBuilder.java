@@ -264,7 +264,7 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
             String base = normalizeBaseItem(row.getBaseItem());
             if (isCurrentPeriodVatPayable(base)) {
                 row.setTotalAmount(sumByBaseItem(rows, "应交增值税")
-                        .subtract(sumByBaseItem(rows, "异地预缴递减")));
+                        .subtract(sumByBaseItem(rows, "异地预缴抵减")));
             }
         }
     }
@@ -735,9 +735,9 @@ public class VatChangeSheetDataBuilder implements LedgerSheetDataBuilder<VatChan
         return "本期应交增值税".equals(normalizedBaseItem);
     }
 
-    /** 基础条目是否为“异地预缴递减”。 */
+    /** 基础条目是否为“异地预缴抵减”。 */
     private boolean isPrepaidDeduction(String normalizedBaseItem) {
-        return "异地预缴递减".equals(normalizedBaseItem);
+        return "异地预缴抵减".equals(normalizedBaseItem);
     }
 
     /** 基础条目是否为“进项转出”。 */

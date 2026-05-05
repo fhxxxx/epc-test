@@ -5,7 +5,6 @@ import com.aspose.cells.BorderType;
 import com.aspose.cells.Cell;
 import com.aspose.cells.CellBorderType;
 import com.aspose.cells.Cells;
-import com.aspose.cells.Color;
 import com.aspose.cells.Font;
 import com.aspose.cells.Range;
 import com.aspose.cells.Style;
@@ -73,7 +72,7 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
             VatChangeRowDTO row = rows.get(i);
             int r = dataStartRow + i;
             writeTextCell(cells, r, 0, row == null ? "" : row.getItemName());
-            writeAmountCell(cells, r, 1, row == null ? null : row.getUnbilledAmount());
+            writeUnbilledAmountCell(cells, r, row);
             writeAmountCell(cells, r, 2, row == null ? null : row.getCurrentMonthInvoicedAmount());
             writeAmountCell(cells, r, 3, row == null ? null : row.getPreviousMonthInvoicedAmount());
             writeAmountCell(cells, r, 4, row == null ? null : row.getTotalAmount());
@@ -128,6 +127,47 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
         cell.setStyle(style);
     }
 
+    /**
+     * 未开票金额列(B列)渲染规则：
+     * 1) 当条目属于“当月利润表主营业务收入* / 应交增值税-销项税*”时，写入公式：合计-当月开票-以前月度开票。
+     * 2) 其他条目保持原有写值逻辑。
+     */
+    private void writeUnbilledAmountCell(Cells cells, int row, VatChangeRowDTO dto) {
+        if (!shouldUseUnbilledFormula(dto)) {
+            writeAmountCell(cells, row, 1, dto == null ? null : dto.getUnbilledAmount());
+            return;
+        }
+        Cell cell = cells.get(row, 1);
+        cell.setFormula(buildUnbilledFormula(row));
+        cell.setStyle(buildBodyAmountStyle(cells));
+    }
+
+    private String buildUnbilledFormula(int zeroBasedRow) {
+        int excelRow = zeroBasedRow + 1;
+        return "=E" + excelRow + "-C" + excelRow + "-D" + excelRow;
+    }
+
+    private boolean shouldUseUnbilledFormula(VatChangeRowDTO dto) {
+        if (dto == null) {
+            return false;
+        }
+        String base = normalizeBaseItem(dto.getBaseItem());
+        if (isBlank(base)) {
+            base = normalizeBaseItem(dto.getItemName());
+        }
+        return "当月利润表主营业务收入".equals(base) || "应交增值税-销项税".equals(base);
+    }
+
+    private String normalizeBaseItem(String text) {
+        if (isBlank(text)) {
+            return "";
+        }
+        return text.replace("*", "")
+                .replace("＊", "")
+                .replace(" ", "")
+                .trim();
+    }
+
     private void applyColumnWidths(Cells cells) {
         cells.setColumnWidth(0, 30);
         cells.setColumnWidth(1, 16);
@@ -138,8 +178,7 @@ public class VatChangeSheetRenderer implements LedgerSheetRenderer<VatChangeLedg
 
     private Style buildHeaderStyle(Cells cells) {
         Style style = cells.get(0, 0).getStyle();
-        style.setPattern(BackgroundType.SOLID);
-        style.setForegroundColor(Color.fromArgb(242, 188, 230));
+        style.setPattern(BackgroundType.NONE);
         style.setHorizontalAlignment(TextAlignmentType.CENTER);
         style.setVerticalAlignment(TextAlignmentType.CENTER);
         Font font = style.getFont();

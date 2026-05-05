@@ -122,7 +122,7 @@ public class CumulativeTaxSummary23202355SheetParser implements SheetParser<List
     private java.math.BigDecimal read(Cells cells, Map<String, Integer> rowMap, String metric, int col) {
         Integer row = rowMap.get(metric);
         if (row == null && "异地预缴税增值税(E)".equals(metric)) {
-            row = rowMap.get("异地预缴递减");
+            row = rowMap.get("异地预缴抵减");
         }
         if (row == null) {
             return null;

@@ -148,7 +148,7 @@ public class CumulativeTaxSummary23202355SheetDataBuilder implements LedgerSheet
         dto.setCurrentInputTaxB(sumByBaseItem(vatRows, "增值税已认证进项税", true));
         dto.setOpeningRetainedInputTaxC(sumByBaseItem(vatRows, "期初留抵进项税", true));
         dto.setInputTaxTransferOutD(sumByBaseItem(vatRows, "进项转出", true));
-        dto.setRemotePrepaidVatE(sumByBaseItem(vatRows, "异地预缴递减", true));
+        dto.setRemotePrepaidVatE(sumByBaseItem(vatRows, "异地预缴抵减", true));
         dto.setVatPayableAminusBminusCplusDminusE(vatPayable);
         dto.setVatAmount(vatAmount);
 
