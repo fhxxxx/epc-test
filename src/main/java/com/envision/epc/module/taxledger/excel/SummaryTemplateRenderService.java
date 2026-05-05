@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -31,6 +32,7 @@ import java.util.regex.Pattern;
 @Service
 public class SummaryTemplateRenderService {
     private static final Pattern LEADING_INTEGER = Pattern.compile("^\\s*(\\d+)\\b.*$");
+    private static final Pattern CIT_QUARTER_HEADER = Pattern.compile("^Q([1-4]).*$", Pattern.CASE_INSENSITIVE);
 
     private static final String TEMPLATE_PATH = "templates/tax-ledger/summary/tax-ledger-summary-template.xlsx";
     private static final String TEMPLATE_SHEET = "Summary_命名区域模板";
@@ -156,6 +158,7 @@ public class SummaryTemplateRenderService {
                                    SummarySheetDTO summaryData) throws Exception {
         Cells templateCells = templateSheet.getCells();
         Cells summaryCells = summarySheet.getCells();
+        YearMonth periodYm = parseYearMonth(summaryData.getLedgerPeriod());
 
         replaceGlobalTokens(summarySheet, summaryData);
         SummaryTemplateStyleRegistry stampStyleRegistry = SummaryTemplateStyleRegistry.fromTemplate(
@@ -214,7 +217,8 @@ public class SummaryTemplateRenderService {
                 summaryCells,
                 cursor,
                 summaryData.getCorporateIncomeTaxRows(),
-                stampStyleRegistry
+                stampStyleRegistry,
+                periodYm
         );
         cursor = citResult.getNextCursor();
         addIfNotNull(declaredSubtotalRows, citResult.getDeclaredSubtotalRow());
@@ -405,7 +409,8 @@ public class SummaryTemplateRenderService {
                                            Cells summaryCells,
                                            int cursor,
                                            List<SummarySheetDTO.CorporateIncomeTaxItem> rows,
-                                           SummaryTemplateStyleRegistry styleRegistry) throws Exception {
+                                           SummaryTemplateStyleRegistry styleRegistry,
+                                           YearMonth periodYm) throws Exception {
         if (rows == null || rows.isEmpty()) {
             return new SectionResult(cursor, null, null);
         }
@@ -430,11 +435,16 @@ public class SummaryTemplateRenderService {
 
         int sectionHeaderRow = cursor;
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_SECTION_HEADER, cursor++);
+        applyCitQuarterHeaderLabels(summaryCells, sectionHeaderRow, periodYm);
         int detailStart = cursor;
         int detailEnd = cursor - 1;
+        Map<Integer, Integer> citQuarterColumnMap = resolveCitQuarterColumns(summaryCells, sectionHeaderRow, periodYm);
+        int q1DeclaredColumn = citQuarterColumnMap.getOrDefault(1, SummaryColumnMapping.COL_DECLARED_AMOUNT);
         for (SummarySheetDTO.CorporateIncomeTaxItem row : detailRows) {
             insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_DETAIL_ROW, cursor);
-            fillCitDetailRow(summaryCells, cursor, row);
+            fillCitDetailRow(summaryCells, cursor, row, citQuarterColumnMap);
+            fillCitQ1DeclaredFormula(summaryCells, cursor, row, q1DeclaredColumn);
+            fillCitAnnualPayableFormula(summaryCells, cursor, row);
             fillCitRemainingLossFormula(summaryCells, cursor);
             detailEnd = cursor;
             cursor++;
@@ -443,7 +453,7 @@ public class SummaryTemplateRenderService {
 
         insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_SUBTOTAL_ROW, cursor);
         if (providedSubtotal != null) {
-            fillCitDetailRow(summaryCells, cursor, providedSubtotal);
+            fillCitDetailRow(summaryCells, cursor, providedSubtotal, citQuarterColumnMap);
             fillCitSubtotalIdentity(summaryCells, cursor, providedSubtotal);
         } else {
             // 无业务小计输入时，清掉模板占位符，避免出现在最终台账。
@@ -613,7 +623,10 @@ public class SummaryTemplateRenderService {
         setSumFormula(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, detailStart, detailEnd);
     }
 
-    private void fillCitDetailRow(Cells cells, int rowIndex, SummarySheetDTO.CorporateIncomeTaxItem row) {
+    private void fillCitDetailRow(Cells cells,
+                                  int rowIndex,
+                                  SummarySheetDTO.CorporateIncomeTaxItem row,
+                                  Map<Integer, Integer> quarterColumnMap) {
         if (row == null) {
             return;
         }
@@ -624,21 +637,156 @@ public class SummaryTemplateRenderService {
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxableIncome());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getTaxRate());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getAnnualTaxPayable());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getQ1Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getQ2Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getQ3Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getQ4Tax());
+        putValueOrBlank(cells, rowIndex, quarterColumnMap.getOrDefault(1, SummaryColumnMapping.COL_DECLARED_AMOUNT), row.getQ1Tax());
+        putValueOrBlank(cells, rowIndex, quarterColumnMap.getOrDefault(2, SummaryColumnMapping.COL_EXTRA_1), row.getQ2Tax());
+        putValueOrBlank(cells, rowIndex, quarterColumnMap.getOrDefault(3, SummaryColumnMapping.COL_BOOK_AMOUNT), row.getQ3Tax());
+        putValueOrBlank(cells, rowIndex, quarterColumnMap.getOrDefault(4, SummaryColumnMapping.COL_VARIANCE_AMOUNT), row.getQ4Tax());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getQ1PayLastYearQ4());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_2, row.getLossCarryforwardUsed());
         putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_3, row.getRemainingLossCarryforward());
     }
 
     private void fillCitRemainingLossFormula(Cells cells, int rowIndex) {
-        String previousCarryRef = toCellRef(rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON);
+        String periodRef = toCellRef(rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC);
+        String taxableIncomeRef = toCellRef(rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
         String currentUsedRef = toCellRef(rowIndex, SummaryColumnMapping.COL_EXTRA_2);
-        String formula = "IF(OR(" + previousCarryRef + "=\"\"," + currentUsedRef + "=\"\"),\"\"," 
-                + previousCarryRef + "-" + currentUsedRef + ")";
+        String formula = "IF(" + currentUsedRef + "=\"\",\"\","
+                + "IF(ISNUMBER(SEARCH(\"减免期\"," + periodRef + ")),"
+                + currentUsedRef + ","
+                + "IF(ISNUMBER(SEARCH(\"减半期\"," + periodRef + ")),"
+                + currentUsedRef + "-IF(" + taxableIncomeRef + "=\"\",0," + taxableIncomeRef + ")*0.5,"
+                + currentUsedRef + "-IF(" + taxableIncomeRef + "=\"\",0," + taxableIncomeRef + "))))";
         cells.get(rowIndex, SummaryColumnMapping.COL_EXTRA_3).setFormula(formula);
+    }
+
+    private void fillCitAnnualPayableFormula(Cells cells,
+                                             int rowIndex,
+                                             SummarySheetDTO.CorporateIncomeTaxItem row) {
+        String taxableIncomeRef = toCellRef(rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN);
+        String taxRateRef = toCellRef(rowIndex, SummaryColumnMapping.COL_LEVY_RATIO);
+        String lossUsedRef = toCellRef(rowIndex, SummaryColumnMapping.COL_EXTRA_2);
+
+        String actualIncomeExpr;
+        PreferentialPeriodType periodType = resolvePreferentialPeriodType(row == null ? null : row.getPreferentialPeriod());
+        if (periodType == PreferentialPeriodType.EXEMPT) {
+            actualIncomeExpr = "0";
+        } else if (periodType == PreferentialPeriodType.HALF) {
+            actualIncomeExpr = "IF(" + taxableIncomeRef + "=\"\",0," + taxableIncomeRef + ")*0.5";
+        } else {
+            actualIncomeExpr = "IF(" + taxableIncomeRef + "=\"\",0," + taxableIncomeRef + ")";
+        }
+        String lossUsedExpr = "IF(" + lossUsedRef + "=\"\",0," + lossUsedRef + ")";
+        String taxableAfterLossExpr = "(" + actualIncomeExpr + "-" + lossUsedExpr + ")";
+        String formula = "IF(" + taxableAfterLossExpr + "<=0,0," + taxableAfterLossExpr + "*IF(" + taxRateRef + "=\"\",0," + taxRateRef + "))";
+
+        cells.get(rowIndex, SummaryColumnMapping.COL_TAX_RATE).setFormula(formula);
+    }
+
+    private PreferentialPeriodType resolvePreferentialPeriodType(String preferentialPeriod) {
+        String normalized = normalizeCompact(preferentialPeriod);
+        if (normalized.contains("减免期")) {
+            return PreferentialPeriodType.EXEMPT;
+        }
+        if (normalized.contains("减半期")) {
+            return PreferentialPeriodType.HALF;
+        }
+        return PreferentialPeriodType.NONE;
+    }
+
+    private enum PreferentialPeriodType {
+        EXEMPT,
+        HALF,
+        NONE
+    }
+
+    private void fillCitQ1DeclaredFormula(Cells cells,
+                                          int rowIndex,
+                                          SummarySheetDTO.CorporateIncomeTaxItem row,
+                                          int q1DeclaredColumn) {
+        if (row == null || row.getQ1Tax() == null) {
+            return;
+        }
+        String q1CarryRef = toCellRef(rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON);
+        String q1SumLiteral = row.getQ1Tax().stripTrailingZeros().toPlainString();
+        String formula = "IF(" + q1CarryRef + "=\"\"," + q1SumLiteral + "," + q1SumLiteral + "-" + q1CarryRef + ")";
+        cells.get(rowIndex, q1DeclaredColumn).setFormula(formula);
+    }
+
+    private Map<Integer, Integer> resolveCitQuarterColumns(Cells cells, int headerRowIndex, YearMonth periodYm) {
+        Map<Integer, Integer> quarterToColumn = new HashMap<>();
+        for (int col = SummaryColumnMapping.COL_DECLARED_AMOUNT; col <= SummaryColumnMapping.COL_VARIANCE_AMOUNT; col++) {
+            String label = cells.get(headerRowIndex, col).getStringValue();
+            if (label == null) {
+                continue;
+            }
+            String compact = normalizeCompact(label).toUpperCase(Locale.ROOT);
+            Matcher matcher = CIT_QUARTER_HEADER.matcher(compact);
+            if (!matcher.matches()) {
+                continue;
+            }
+            Integer quarter = parseQuarterNumber(matcher.group(1));
+            if (quarter != null) {
+                quarterToColumn.put(quarter, col);
+            }
+        }
+        if (quarterToColumn.size() == 4) {
+            return quarterToColumn;
+        }
+
+        int[] quarterColumns = {
+                SummaryColumnMapping.COL_DECLARED_AMOUNT,
+                SummaryColumnMapping.COL_EXTRA_1,
+                SummaryColumnMapping.COL_BOOK_AMOUNT,
+                SummaryColumnMapping.COL_VARIANCE_AMOUNT
+        };
+        if (periodYm == null) {
+            quarterToColumn.put(1, SummaryColumnMapping.COL_DECLARED_AMOUNT);
+            quarterToColumn.put(2, SummaryColumnMapping.COL_EXTRA_1);
+            quarterToColumn.put(3, SummaryColumnMapping.COL_BOOK_AMOUNT);
+            quarterToColumn.put(4, SummaryColumnMapping.COL_VARIANCE_AMOUNT);
+            return quarterToColumn;
+        }
+        int currentQuarter = ((periodYm.getMonthValue() - 1) / 3) + 1;
+        for (int i = 0; i < quarterColumns.length; i++) {
+            int quarter = ((currentQuarter - 1 + i) % 4) + 1;
+            quarterToColumn.put(quarter, quarterColumns[i]);
+        }
+        return quarterToColumn;
+    }
+
+    private Integer parseQuarterNumber(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        try {
+            int quarter = Integer.parseInt(token.trim());
+            return quarter >= 1 && quarter <= 4 ? quarter : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private void applyCitQuarterHeaderLabels(Cells cells, int headerRowIndex, YearMonth periodYm) {
+        if (periodYm == null) {
+            cells.get(headerRowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT).putValue("Q1应缴税额");
+            cells.get(headerRowIndex, SummaryColumnMapping.COL_EXTRA_1).putValue("Q2应缴税额");
+            cells.get(headerRowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT).putValue("Q3应缴税额");
+            cells.get(headerRowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT).putValue("Q4应缴税额");
+            return;
+        }
+        int month = periodYm.getMonthValue();
+        int currentQuarter = ((month - 1) / 3) + 1;
+        int[] quarterColumns = {
+                SummaryColumnMapping.COL_DECLARED_AMOUNT,
+                SummaryColumnMapping.COL_EXTRA_1,
+                SummaryColumnMapping.COL_BOOK_AMOUNT,
+                SummaryColumnMapping.COL_VARIANCE_AMOUNT
+        };
+        for (int i = 0; i < quarterColumns.length; i++) {
+            int quarter = ((currentQuarter - 1 + i) % 4) + 1;
+            boolean ended = month >= quarter * 3;
+            cells.get(headerRowIndex, quarterColumns[i]).putValue("Q" + quarter + (ended ? "已缴税额" : "应缴税额"));
+        }
     }
 
     private void fillCitSubtotalIdentity(Cells cells,
