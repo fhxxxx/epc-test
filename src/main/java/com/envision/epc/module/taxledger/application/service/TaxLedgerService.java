@@ -521,7 +521,9 @@ public class TaxLedgerService {
                 .orderByAsc(TaxCategoryConfig::getSeqNo));
         List<ProjectConfig> projectConfigs = projectConfigMapper.selectList(new LambdaQueryWrapper<ProjectConfig>()
                 .eq(ProjectConfig::getIsDeleted, 0)
-                .eq(ProjectConfig::getCompanyCode, companyCode));
+                .and(w -> w.isNull(ProjectConfig::getCompanyCode)
+                        .or().eq(ProjectConfig::getCompanyCode, "")
+                        .or().eq(ProjectConfig::getCompanyCode, companyCode)));
         List<VatBasicItemConfig> vatBasicItemConfigs = vatBasicItemConfigMapper.selectList(new LambdaQueryWrapper<VatBasicItemConfig>()
                 .eq(VatBasicItemConfig::getIsDeleted, 0)
                 .orderByAsc(VatBasicItemConfig::getItemSeq));

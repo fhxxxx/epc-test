@@ -19,4 +19,8 @@ public final class SummaryColumnMapping {
     public static final int COL_BOOK_AMOUNT = 9;
     public static final int COL_VARIANCE_AMOUNT = 10;
     public static final int COL_VARIANCE_REASON = 11;
+    /** 企业所得税：剩余可弥补亏损金额 */
+    public static final int COL_EXTRA_2 = 12;
+    /** 企业所得税：扩展列（如剩余可弥补亏损金额） */
+    public static final int COL_EXTRA_3 = 13;
 }

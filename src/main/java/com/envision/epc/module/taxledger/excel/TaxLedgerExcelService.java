@@ -34,6 +34,7 @@ public class TaxLedgerExcelService {
         long renderStart = System.currentTimeMillis();
         Workbook workbook = new Workbook();
         Map<LedgerSheetCode, Map<String, Object>> renderReportsByCode = new LinkedHashMap<>();
+        Map<LedgerSheetCode, List<String>> renderedSheetNamesByCode = new LinkedHashMap<>();
         List<LedgerSheetCode> renderExecutionOrder = executionPlan.orderedForRenderExecution(renderContext.getCompanyCode());
         List<LedgerSheetCode> displayOrder = executionPlan.orderedForDisplay(renderContext.getCompanyCode());
 
@@ -43,13 +44,16 @@ public class TaxLedgerExcelService {
             LedgerSheetRenderer<LedgerSheetData> renderer =
                     (LedgerSheetRenderer<LedgerSheetData>) registry.requiredRenderer(code);
 
+            int beforeCount = workbook.getWorksheets().getCount();
             long start = System.currentTimeMillis();
             renderer.render(workbook, data, renderContext);
             long elapsed = System.currentTimeMillis() - start;
+            List<String> renderedSheetNames = captureRenderedSheetNames(workbook, beforeCount);
+            renderedSheetNamesByCode.put(code, renderedSheetNames);
 
             Map<String, Object> sheetReport = new LinkedHashMap<>();
             sheetReport.put("sheetCode", code.name());
-            sheetReport.put("sheetName", code.getSheetName());
+            sheetReport.put("sheetName", renderedSheetNames.isEmpty() ? code.getSheetName() : renderedSheetNames.get(0));
             sheetReport.put("displayName", code.getDisplayName());
             sheetReport.put("mode", code.getMode().name());
             sheetReport.put("buildMs", workbookData.getBuildCostMs() == null ? null : workbookData.getBuildCostMs().get(code));
@@ -59,7 +63,7 @@ public class TaxLedgerExcelService {
         }
 
         removeDefaultBlankSheet(workbook);
-        reorderWorksheetsByDisplayOrder(workbook, displayOrder);
+        reorderWorksheetsByDisplayOrder(workbook, displayOrder, renderedSheetNamesByCode);
         workbook.calculateFormula();
 
         List<Map<String, Object>> sheetReports = new ArrayList<>();
@@ -90,15 +94,38 @@ public class TaxLedgerExcelService {
                 .build();
     }
 
-    private void reorderWorksheetsByDisplayOrder(Workbook workbook, List<LedgerSheetCode> displayOrder) {
+    private void reorderWorksheetsByDisplayOrder(Workbook workbook,
+                                                 List<LedgerSheetCode> displayOrder,
+                                                 Map<LedgerSheetCode, List<String>> renderedSheetNamesByCode) {
         int targetIndex = 0;
         for (LedgerSheetCode code : displayOrder) {
-            Worksheet sheet = workbook.getWorksheets().get(code.getSheetName());
-            if (sheet == null) {
-                continue;
+            List<String> candidates = renderedSheetNamesByCode == null ? List.of() : renderedSheetNamesByCode.get(code);
+            if (candidates == null || candidates.isEmpty()) {
+                candidates = List.of(code.getSheetName());
             }
-            sheet.moveTo(targetIndex++);
+            for (String sheetName : candidates) {
+                Worksheet sheet = workbook.getWorksheets().get(sheetName);
+                if (sheet == null) {
+                    continue;
+                }
+                sheet.moveTo(targetIndex++);
+            }
         }
+    }
+
+    private List<String> captureRenderedSheetNames(Workbook workbook, int beforeCount) {
+        int afterCount = workbook.getWorksheets().getCount();
+        if (afterCount <= beforeCount) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>();
+        for (int i = beforeCount; i < afterCount; i++) {
+            Worksheet sheet = workbook.getWorksheets().get(i);
+            if (sheet != null && sheet.getName() != null) {
+                names.add(sheet.getName());
+            }
+        }
+        return names;
     }
 
     private void removeDefaultBlankSheet(Workbook workbook) {

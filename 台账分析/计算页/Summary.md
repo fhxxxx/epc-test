@@ -345,7 +345,7 @@ public class SummarySheetDTO {
 - `levyRatio/taxRate`：来自税目配置。
 - `actualTaxPayable(D)`：默认 `A * B * C`，特殊行按业务值覆盖。
 - `accountCode/bookAmount`：按公司分支规则取值（见 9.2.4），非命中税目为空。
-- `varianceAmount`：渲染时统一写公式 `D - 账面金额`。
+- `varianceAmount`：仅当 `D` 与 `账面金额` 均有值时，渲染写公式 `D - 账面金额`；否则留空（避免 `#VALUE!`）。
 
 #### 9.2.2 `taxBaseAmount(A)` 特殊规则
 - `销项税额-主营业务收入*`：
@@ -374,7 +374,7 @@ public class SummarySheetDTO {
   - `期末进项留抵金额`：`BS附表` 中“应交税费-增值税*”累计余额合计
   - 其他增值税税目：空
 - 公司代码 **等于** `2320/2355`：
-  - `销项税额-主营业务收入*`：`PL附表-2320/2355` 的 `declarationSplitList.declaredTaxAmount`，按“税目后缀 contains splitBasis”匹配并过滤普票后汇总
+  - `销项税额-主营业务收入*`：取 `PL_APPENDIX_2320` **builder产物**中的 `declarationSplitList.declaredTaxAmount`，按“税目后缀 contains splitBasis”匹配并过滤普票后汇总（不额外校验税率）
   - `增值税进项税额`：`DL_INPUT.documentAmountSum`
   - `期末进项留抵金额`：`BS附表` 中“应交税费-增值税*”累计余额合计
   - 其他增值税税目：空
@@ -406,7 +406,7 @@ public class SummarySheetDTO {
 - `actualTaxPayable`：`A * B * C`（无特殊覆盖时）。
 - `accountCode/bookAmount`：按科目取账面值。
 - `varianceAmount`：渲染时写公式 `D - 账面金额`。
-- `varianceReason`：`varianceAmount != 0` 时必填，否则可空。
+- `varianceReason`：不自动填充，统一留空。
 
 #### 9.4.2 渲染规则
 - 不输出小计行；

@@ -15,6 +15,7 @@ import com.envision.epc.module.taxledger.application.dto.DatalakeExportRowDTO;
 import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
+import com.envision.epc.module.taxledger.application.ledger.CitQuarterAmountDTO;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
 import com.envision.epc.module.taxledger.domain.FileRecord;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -189,6 +191,67 @@ public class DataLakeService {
         );
     }
 
+    public CitQuarterAmountDTO loadCitQuarterAmounts(String yearMonth, String companyCode) {
+        CitQuarterAmountDTO result = new CitQuarterAmountDTO();
+        YearMonth ym = parseYearMonthOrNull(yearMonth);
+        if (ym == null || CharSequenceUtil.isBlank(companyCode)) {
+            return result;
+        }
+
+        String fiscalYearPeriodStart = ym.getYear() + "001";
+        String fiscalYearPeriodEnd = ym.getYear() + "012";
+
+        List<DatalakeDTO> rows;
+        try {
+            rows = queryCitQuarterFromDataLake(companyCode, fiscalYearPeriodStart, fiscalYearPeriodEnd);
+        } catch (Exception ex) {
+            log.warn("load CIT quarter amounts failed, companyCode={}, yearMonth={}", companyCode, yearMonth, ex);
+            return result;
+        }
+
+        for (DatalakeDTO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            Integer month = resolveMonth(row);
+            if (month == null || month < 1 || month > 12) {
+                continue;
+            }
+            BigDecimal amount = safe(row.getDebitAmountInDocumentCurrency())
+                    .add(safe(row.getCreditAmountInDocumentCurrency()).negate());
+            int quarter = ((month - 1) / 3) + 1;
+            switch (quarter) {
+                case 1 -> result.setQ1(safe(result.getQ1()).add(amount));
+                case 2 -> result.setQ2(safe(result.getQ2()).add(amount));
+                case 3 -> result.setQ3(safe(result.getQ3()).add(amount));
+                case 4 -> result.setQ4(safe(result.getQ4()).add(amount));
+                default -> {
+                }
+            }
+        }
+        return result;
+    }
+
+    private List<DatalakeDTO> queryCitQuarterFromDataLake(String companyCode,
+                                                          String fiscalYearPeriodStart,
+                                                          String fiscalYearPeriodEnd) {
+        int offset = 0;
+        int limit = 5000;
+        String reqUrl = platformDomain + CharSequenceUtil.format(
+                DataLakeConstants.FINANCE_ELECTRONICARCHIVES_CIT_QUARTER_REQ_PATH_PATTERN,
+                companyCode,
+                fiscalYearPeriodStart,
+                fiscalYearPeriodEnd,
+                offset,
+                limit
+        );
+        return platformRemote.fetchFromDataLake(
+                DataLakeConstants.FINANCE_ELECTRONICARCHIVES_SVC,
+                reqUrl,
+                DatalakeDTO::fromPltData
+        );
+    }
+
     private byte[] toExcelBytes(List<DatalakeExportRowDTO> exportRows, String sheetName) {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             EasyExcelFactory.write(outputStream, DatalakeExportRowDTO.class)
@@ -286,6 +349,77 @@ public class DataLakeService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Integer resolveMonth(DatalakeDTO row) {
+        Integer monthFromFiscal = monthFromText(row.getFiscalYearPeriod());
+        if (monthFromFiscal != null) {
+            return monthFromFiscal;
+        }
+        Integer monthFromDocDate = monthFromText(row.getDocumentDate());
+        if (monthFromDocDate != null) {
+            return monthFromDocDate;
+        }
+        return monthFromText(row.getPostingDateInTheDocument());
+    }
+
+    private Integer monthFromText(String text) {
+        if (CharSequenceUtil.isBlank(text)) {
+            return null;
+        }
+        String value = text.trim();
+        if (value.matches("^\\d{7}$")) {
+            Integer month = parseMonthToken(value.substring(4));
+            if (month != null) {
+                return month;
+            }
+        }
+        if (value.matches("^\\d{4}-\\d{2}$")) {
+            return parseMonthToken(value.substring(5, 7));
+        }
+        if (value.matches("^\\d{6}$")) {
+            return parseMonthToken(value.substring(4, 6));
+        }
+        if (value.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            return parseMonthToken(value.substring(5, 7));
+        }
+        if (value.length() >= 7 && value.charAt(4) == '-') {
+            String mm = value.substring(5, 7);
+            if (mm.matches("\\d{2}")) {
+                return parseMonthToken(mm);
+            }
+        }
+        return null;
+    }
+
+    private Integer parseMonthToken(String token) {
+        if (CharSequenceUtil.isBlank(token)) {
+            return null;
+        }
+        try {
+            int month = Integer.parseInt(token);
+            return month >= 1 && month <= 12 ? month : null;
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private YearMonth parseYearMonthOrNull(String yearMonth) {
+        if (CharSequenceUtil.isBlank(yearMonth)) {
+            return null;
+        }
+        String text = yearMonth.trim();
+        if (text.matches("^\\d{6}$")) {
+            text = text.substring(0, 4) + "-" + text.substring(4, 6);
+        }
+        if (!text.matches("^\\d{4}-\\d{2}$")) {
+            return null;
+        }
+        try {
+            return YearMonth.parse(text);
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 
     private static String normalizeAccount(String account) {

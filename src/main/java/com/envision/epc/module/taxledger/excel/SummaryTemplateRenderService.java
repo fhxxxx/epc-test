@@ -435,6 +435,7 @@ public class SummaryTemplateRenderService {
         for (SummarySheetDTO.CorporateIncomeTaxItem row : detailRows) {
             insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.CIT_DETAIL_ROW, cursor);
             fillCitDetailRow(summaryCells, cursor, row);
+            fillCitRemainingLossFormula(summaryCells, cursor);
             detailEnd = cursor;
             cursor++;
         }
@@ -617,17 +618,27 @@ public class SummaryTemplateRenderService {
             return;
         }
         clearCell(cells, rowIndex, SummaryColumnMapping.COL_SEQ);
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE, row.getProjectName());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getPreferentialPeriod());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getTaxableIncome());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxRate());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getAnnualTaxPayable());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getQ1Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getQ2Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getQ3Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getQ4Tax());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getQ1PayLastYearQ4());
-        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getLossCarryforwardUsed());
+        clearCell(cells, rowIndex, SummaryColumnMapping.COL_TAX_TYPE);
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_ITEM, row.getProjectName());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASIS_DESC, row.getPreferentialPeriod());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_BASE_MAIN, row.getTaxableIncome());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_LEVY_RATIO, row.getTaxRate());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_TAX_RATE, row.getAnnualTaxPayable());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT, row.getQ1Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_1, row.getQ2Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT, row.getQ3Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT, row.getQ4Tax());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON, row.getQ1PayLastYearQ4());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_2, row.getLossCarryforwardUsed());
+        putValueOrBlank(cells, rowIndex, SummaryColumnMapping.COL_EXTRA_3, row.getRemainingLossCarryforward());
+    }
+
+    private void fillCitRemainingLossFormula(Cells cells, int rowIndex) {
+        String previousCarryRef = toCellRef(rowIndex, SummaryColumnMapping.COL_VARIANCE_REASON);
+        String currentUsedRef = toCellRef(rowIndex, SummaryColumnMapping.COL_EXTRA_2);
+        String formula = "IF(OR(" + previousCarryRef + "=\"\"," + currentUsedRef + "=\"\"),\"\"," 
+                + previousCarryRef + "-" + currentUsedRef + ")";
+        cells.get(rowIndex, SummaryColumnMapping.COL_EXTRA_3).setFormula(formula);
     }
 
     private void fillCitSubtotalIdentity(Cells cells,
