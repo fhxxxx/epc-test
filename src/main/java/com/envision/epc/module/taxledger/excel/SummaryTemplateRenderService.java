@@ -327,7 +327,7 @@ public class SummaryTemplateRenderService {
             insertRowCopyByNamespace(summaryCells, templateCells, styleRegistry, SummaryTemplateNamespace.VAT_DETAIL_ROW, cursor);
             fillCommonDetailRow(summaryCells, cursor, row);
             applyVatManualBaseFormula(summaryCells, cursor, row, vatRefIndex);
-            fillVatDetailVarianceFormula(summaryCells, cursor);
+            fillVatDetailVarianceFormula(summaryCells, cursor, row);
             detailEnd = cursor;
             cursor++;
         }
@@ -544,7 +544,11 @@ public class SummaryTemplateRenderService {
         }
     }
 
-    private void fillVatDetailVarianceFormula(Cells cells, int rowIndex) {
+    private void fillVatDetailVarianceFormula(Cells cells, int rowIndex, SummarySheetDTO.CommonTaxItem row) {
+        if (row == null || row.getActualTaxPayable() == null || row.getBookAmount() == null) {
+            cells.get(rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT).putValue("");
+            return;
+        }
         String declaredCell = toCellRef(rowIndex, SummaryColumnMapping.COL_DECLARED_AMOUNT);
         String bookCell = toCellRef(rowIndex, SummaryColumnMapping.COL_BOOK_AMOUNT);
         cells.get(rowIndex, SummaryColumnMapping.COL_VARIANCE_AMOUNT).setFormula(declaredCell + "-" + bookCell);

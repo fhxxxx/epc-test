@@ -344,7 +344,7 @@ public class SummarySheetDTO {
 - `taxBaseAmount(A)`：主要来自 `VAT_CHANGE`（优先 builder产物）。
 - `levyRatio/taxRate`：来自税目配置。
 - `actualTaxPayable(D)`：默认 `A * B * C`，特殊行按业务值覆盖。
-- `accountCode/bookAmount`：来自税目配置与账面科目取值。
+- `accountCode/bookAmount`：按公司分支规则取值（见 9.2.4），非命中税目为空。
 - `varianceAmount`：渲染时统一写公式 `D - 账面金额`。
 
 #### 9.2.2 `taxBaseAmount(A)` 特殊规则
@@ -365,6 +365,19 @@ public class SummarySheetDTO {
 #### 9.2.3 合计行规则
 - 不显示“小计”文案；
 - `实际应纳税额(D)` 优先使用该合计行业务值，无值时回退明细求和公式。
+
+#### 9.2.4 账面金额（`bookAmount`）公司分支口径
+
+- 公司代码 **不等于** `2320/2355`：
+  - `销项税额-主营业务收入`：`DL_OUTPUT.documentAmountSum * -1`
+  - `增值税进项税额`：`DL_INPUT.documentAmountSum`
+  - `期末进项留抵金额`：`BS附表` 中“应交税费-增值税*”累计余额合计
+  - 其他增值税税目：空
+- 公司代码 **等于** `2320/2355`：
+  - `销项税额-主营业务收入*`：`PL附表-2320/2355` 的 `declarationSplitList.declaredTaxAmount`，按“税目后缀 contains splitBasis”匹配并过滤普票后汇总
+  - `增值税进项税额`：`DL_INPUT.documentAmountSum`
+  - `期末进项留抵金额`：`BS附表` 中“应交税费-增值税*”累计余额合计
+  - 其他增值税税目：空
 
 ### 9.3 企业所得税段（`corporateIncomeTaxRows`）
 

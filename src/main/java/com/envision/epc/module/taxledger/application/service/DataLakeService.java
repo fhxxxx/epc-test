@@ -254,11 +254,13 @@ public class DataLakeService {
     private DlInputParsedDTO aggregateInput(List<DatalakeExportRowDTO> rows) {
         DlInputParsedDTO dto = new DlInputParsedDTO();
         dto.getLocalAmountSumByAccount().put(ACCOUNT_INPUT_TRANSFER_OUT, BigDecimal.ZERO);
+        dto.setDocumentAmountSum(BigDecimal.ZERO);
 
         for (DatalakeExportRowDTO row : rows) {
             if (row == null) {
                 continue;
             }
+            dto.setDocumentAmountSum(dto.getDocumentAmountSum().add(parseAmount(row.getDocumentAmount())));
             if (!accountContains(row.getAccount(), ACCOUNT_INPUT_TRANSFER_OUT)) {
                 continue;
             }

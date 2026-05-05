@@ -29,11 +29,13 @@ public class DataLakeInputSheetParser extends AbstractDatalakeDetailSheetParser<
     protected DlInputParsedDTO aggregate(List<DatalakeExportRowDTO> rows) {
         DlInputParsedDTO dto = new DlInputParsedDTO();
         dto.getLocalAmountSumByAccount().put(ACCOUNT_INPUT_TRANSFER_OUT, BigDecimal.ZERO);
+        dto.setDocumentAmountSum(BigDecimal.ZERO);
 
         for (DatalakeExportRowDTO row : rows) {
             if (row == null) {
                 continue;
             }
+            dto.setDocumentAmountSum(dto.getDocumentAmountSum().add(amount(row.getDocumentAmount())));
             if (!accountContains(row.getAccount(), ACCOUNT_INPUT_TRANSFER_OUT)) {
                 continue;
             }

@@ -12,6 +12,11 @@ import java.util.Map;
 @Data
 public class DlInputParsedDTO {
     /**
+     * 货币金额合计（documentAmount）。
+     */
+    private BigDecimal documentAmountSum;
+
+    /**
      * 按科目的本币金额合计（localAmount）。
      */
     private Map<String, BigDecimal> localAmountSumByAccount = new HashMap<>();

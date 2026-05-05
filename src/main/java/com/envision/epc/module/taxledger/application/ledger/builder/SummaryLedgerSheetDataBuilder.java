@@ -1,8 +1,11 @@
 package com.envision.epc.module.taxledger.application.ledger.builder;
 
 import com.envision.epc.module.taxledger.application.dto.ContractStampDutyLedgerItemDTO;
+import com.envision.epc.module.taxledger.application.dto.BsAppendixUploadDTO;
 import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.DlOutputParsedDTO;
+import com.envision.epc.module.taxledger.application.dto.PlAppendix23202355DTO;
 import com.envision.epc.module.taxledger.application.dto.SummarySheetDTO;
 import com.envision.epc.module.taxledger.application.dto.StampDutySummaryRowDTO;
 import com.envision.epc.module.taxledger.application.dto.VatInputCertParsedDTO;
@@ -11,6 +14,7 @@ import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetDataBuilder;
 import com.envision.epc.module.taxledger.application.ledger.SummaryQuarterSnapshot;
+import com.envision.epc.module.taxledger.application.ledger.data.PlAppendix2320LedgerSheetData;
 import com.envision.epc.module.taxledger.application.ledger.data.SummaryLedgerSheetData;
 import com.envision.epc.module.taxledger.application.ledger.data.VatChangeLedgerSheetData;
 import com.envision.epc.module.taxledger.domain.FileCategoryEnum;
@@ -38,7 +42,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<SummaryLedgerSheetData> {
     private static final BigDecimal ONE = BigDecimal.ONE;
-    private static final String DEFAULT_VARIANCE_REASON = "待核对";
     private static final Pattern SEQ_NO_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?$");
     private static final Pattern RATE_TOKEN_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)%");
     private static final String VAT_PAYABLE_ITEM = "应交增值税";
@@ -50,6 +53,9 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
     private static final String VAT_BEGINNING_INPUT_CARRY = "期初进项留抵金额";
     private static final String VAT_CHANGE_CERTIFIED_INPUT_TAX = "增值税已认证进项税";
     private static final String VAT_CHANGE_INPUT_TRANSFER_OUT = "进项转出";
+    private static final String VAT_CHANGE_BEGINNING_INPUT_CARRY_PREFIX = "期初留抵进项税";
+    private static final String VAT_CHANGE_ENDING_INPUT_CARRY_PREFIX = "期末留抵进项税";
+    private static final String BS_APPENDIX_TAX_PAYABLE_VAT_PREFIX = "应交税费-增值税";
 
     @Override
     public LedgerSheetCode support() {
@@ -66,6 +72,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         List<TaxCategoryConfig> taxConfigs = resolveTaxConfigs(ctx);
         Map<String, StampAgg> stampAggMap = resolveStampAggMap(ctx, issues);
         VatBaseLookup vatBaseLookup = resolveVatBaseLookup(ctx);
+        VatBookLookup vatBookLookup = resolveVatBookLookup(ctx, issues);
         Map<String, BigDecimal> bookAmountByAccount = resolveBookAmountByAccount(ctx);
         Map<String, ProjectConfig> projectConfigByTaxCategory = resolveProjectConfigByTaxCategory(ctx);
 
@@ -111,7 +118,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
                 }
             }
             SummarySheetDTO.CommonTaxItem row = buildCommonRow(
-                    config, taxType, taxItem, rowSeqNo, vatBaseLookup, bookAmountByAccount, actualOverride, issues);
+                    config, taxType, taxItem, rowSeqNo, vatBaseLookup, vatBookLookup, bookAmountByAccount, actualOverride, issues);
             if (isVatTaxType(taxType)) {
                 vatRows.add(row);
             } else {
@@ -186,6 +193,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
                                                          String taxItem,
                                                          Integer rowSeqNo,
                                                          VatBaseLookup vatBaseLookup,
+                                                         VatBookLookup vatBookLookup,
                                                          Map<String, BigDecimal> bookAmountByAccount,
                                                          BigDecimal actualOverride,
                                                          List<String> issues) {
@@ -203,8 +211,8 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         BigDecimal actual = actualOverride == null
                 ? taxBaseForCalc.multiply(levyRatio).multiply(taxRate)
                 : zeroIfNull(actualOverride);
-        BigDecimal book = zeroIfNull(bookAmountByAccount.get(normalizeText(config.getAccountSubject())));
-        BigDecimal variance = actual.subtract(book);
+        BigDecimal book = resolveBookAmount(config, taxType, taxItem, vatBookLookup, bookAmountByAccount, issues);
+        BigDecimal variance = actual.subtract(zeroIfNull(book));
 
         row.setTaxBaseAmount(taxBase);
         row.setLevyRatio(levyRatio);
@@ -212,8 +220,78 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         row.setActualTaxPayable(actual);
         row.setBookAmount(book);
         row.setVarianceAmount(variance);
-        row.setVarianceReason(variance.signum() == 0 ? "" : DEFAULT_VARIANCE_REASON);
+        row.setVarianceReason("");
         return row;
+    }
+
+    private BigDecimal resolveBookAmount(TaxCategoryConfig config,
+                                         String taxType,
+                                         String taxItem,
+                                         VatBookLookup vatBookLookup,
+                                         Map<String, BigDecimal> bookAmountByAccount,
+                                         List<String> issues) {
+        if (!isVatTaxType(taxType)) {
+            return zeroIfNull(bookAmountByAccount.get(normalizeText(config == null ? null : config.getAccountSubject())));
+        }
+        return resolveVatBookAmount(taxItem, vatBookLookup, issues);
+    }
+
+    private BigDecimal resolveVatBookAmount(String taxItem, VatBookLookup vatBookLookup, List<String> issues) {
+        if (vatBookLookup == null) {
+            return null;
+        }
+        String normalizedTaxItem = normalizeText(taxItem);
+        boolean rjjc = vatBookLookup.rjjcCompany;
+
+        if (VAT_INPUT_TAX_ITEM.equals(normalizedTaxItem)) {
+            return zeroIfNull(vatBookLookup.dlInputDocumentAmountSum);
+        }
+        if (VAT_ENDING_INPUT_CARRY.equals(normalizedTaxItem)) {
+            return zeroIfNull(vatBookLookup.bsAppendixVatCumulativeBalance);
+        }
+        if (normalizedTaxItem.startsWith(VAT_MAIN_REVENUE_PREFIX)) {
+            if (rjjc) {
+                return resolveRjjcMainRevenueBookBySuffix(normalizedTaxItem, vatBookLookup, issues);
+            }
+            if (isNonRjjcMainRevenueItem(normalizedTaxItem)) {
+                return zeroIfNull(vatBookLookup.dlOutputDocumentAmountSum).negate();
+            }
+            return null;
+        }
+        return null;
+    }
+
+    private boolean isNonRjjcMainRevenueItem(String normalizedTaxItem) {
+        return VAT_MAIN_REVENUE_PREFIX.equals(normalizedTaxItem)
+                || (VAT_MAIN_REVENUE_PREFIX + "*").equals(normalizedTaxItem);
+    }
+
+    private BigDecimal resolveRjjcMainRevenueBookBySuffix(String taxItem,
+                                                          VatBookLookup vatBookLookup,
+                                                          List<String> issues) {
+        String suffix = extractMainRevenueSuffix(taxItem);
+        if (suffix.isBlank()) {
+            issues.add("增值税账面金额税目后缀提取失败，按空处理: taxItem=" + taxItem);
+            return null;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        int matched = 0;
+        for (Map.Entry<String, BigDecimal> entry : vatBookLookup.plAppendixDeclaredTaxBySplitBasis.entrySet()) {
+            String splitBasis = normalizeText(entry.getKey());
+            if (splitBasis.contains("普票")) {
+                continue;
+            }
+            if (!splitBasis.contains(suffix)) {
+                continue;
+            }
+            matched++;
+            total = total.add(zeroIfNull(entry.getValue()));
+        }
+        if (matched == 0) {
+            issues.add("增值税账面金额未命中PL附表拆分依据，按空处理: taxItem=" + taxItem + ", suffix=" + suffix);
+            return null;
+        }
+        return total;
     }
 
     private BigDecimal resolveTaxBaseAmount(TaxCategoryConfig config,
@@ -251,24 +329,46 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
     }
 
     private BigDecimal resolveVatInputTaxDeclaredAmount(String taxItem, VatBaseLookup vatBaseLookup) {
-        if (!VAT_INPUT_TAX_ITEM.equals(normalizeText(taxItem))) {
-            return null;
+        String normalizedTaxItem = normalizeText(taxItem);
+        if (VAT_INPUT_TAX_ITEM.equals(normalizedTaxItem)) {
+            BigDecimal declared = BigDecimal.ZERO;
+            for (VatChangeRowDTO row : vatBaseLookup.rows) {
+                if (row == null) {
+                    continue;
+                }
+                String baseItem = normalizeText(row.getBaseItem());
+                String itemName = normalizeText(row.getItemName());
+                if (VAT_CHANGE_CERTIFIED_INPUT_TAX.equals(baseItem)
+                        || VAT_CHANGE_CERTIFIED_INPUT_TAX.equals(itemName)
+                        || VAT_CHANGE_INPUT_TRANSFER_OUT.equals(baseItem)
+                        || VAT_CHANGE_INPUT_TRANSFER_OUT.equals(itemName)) {
+                    declared = declared.add(zeroIfNull(row.getTotalAmount()));
+                }
+            }
+            return declared;
         }
-        BigDecimal declared = BigDecimal.ZERO;
-        for (VatChangeRowDTO row : vatBaseLookup.rows) {
+        if (VAT_BEGINNING_INPUT_CARRY.equals(normalizedTaxItem)) {
+            return sumVatChangeByPrefix(vatBaseLookup.rows, VAT_CHANGE_BEGINNING_INPUT_CARRY_PREFIX);
+        }
+        if (VAT_ENDING_INPUT_CARRY.equals(normalizedTaxItem)) {
+            return sumVatChangeByPrefix(vatBaseLookup.rows, VAT_CHANGE_ENDING_INPUT_CARRY_PREFIX);
+        }
+        return null;
+    }
+
+    private BigDecimal sumVatChangeByPrefix(List<VatChangeRowDTO> rows, String prefix) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (VatChangeRowDTO row : rows) {
             if (row == null) {
                 continue;
             }
             String baseItem = normalizeText(row.getBaseItem());
             String itemName = normalizeText(row.getItemName());
-            if (VAT_CHANGE_CERTIFIED_INPUT_TAX.equals(baseItem)
-                    || VAT_CHANGE_CERTIFIED_INPUT_TAX.equals(itemName)
-                    || VAT_CHANGE_INPUT_TRANSFER_OUT.equals(baseItem)
-                    || VAT_CHANGE_INPUT_TRANSFER_OUT.equals(itemName)) {
-                declared = declared.add(zeroIfNull(row.getTotalAmount()));
+            if (baseItem.startsWith(prefix) || itemName.startsWith(prefix)) {
+                total = total.add(zeroIfNull(row.getTotalAmount()));
             }
         }
-        return declared;
+        return total;
     }
 
     private BigDecimal resolveVatMainRevenueTaxBaseAmount(TaxCategoryConfig config,
@@ -495,6 +595,98 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         return new VatBaseLookup(result, payload, vatInputCertAmount);
     }
 
+    private VatBookLookup resolveVatBookLookup(LedgerBuildContext ctx, List<String> issues) {
+        VatBookLookup lookup = new VatBookLookup();
+        lookup.rjjcCompany = isCompany2320Or2355(ctx.getCompanyCode());
+
+        if (ctx.hasParsed(FileCategoryEnum.DL_OUTPUT)) {
+            DlOutputParsedDTO dlOutput = ctx.getParsedObject(FileCategoryEnum.DL_OUTPUT, DlOutputParsedDTO.class);
+            lookup.dlOutputDocumentAmountSum = zeroIfNull(dlOutput == null ? null : dlOutput.getDocumentAmountSum());
+        } else {
+            issues.add("增值税账面金额缺少DL_OUTPUT解析结果，相关税目按空/0处理");
+        }
+
+        if (ctx.hasParsed(FileCategoryEnum.DL_INPUT)) {
+            DlInputParsedDTO dlInput = ctx.getParsedObject(FileCategoryEnum.DL_INPUT, DlInputParsedDTO.class);
+            lookup.dlInputDocumentAmountSum = zeroIfNull(dlInput == null ? null : dlInput.getDocumentAmountSum());
+        } else {
+            issues.add("增值税账面金额缺少DL_INPUT解析结果，相关税目按空/0处理");
+        }
+
+        if (ctx.hasParsed(FileCategoryEnum.BS_APPENDIX_TAX_PAYABLE)) {
+            List<BsAppendixUploadDTO> rows = ctx.getParsedList(FileCategoryEnum.BS_APPENDIX_TAX_PAYABLE, BsAppendixUploadDTO.class);
+            lookup.bsAppendixVatCumulativeBalance = sumBsAppendixVatCumulativeBalance(rows);
+        } else {
+            issues.add("增值税账面金额缺少BS附表解析结果，期末进项留抵金额按空/0处理");
+        }
+
+        if (lookup.rjjcCompany) {
+            try {
+                PlAppendix2320LedgerSheetData plAppendixData = ctx.requireBuilt(
+                        LedgerSheetCode.PL_APPENDIX_2320, PlAppendix2320LedgerSheetData.class, support());
+                PlAppendix23202355DTO dto = plAppendixData == null ? null : plAppendixData.getPayload();
+                lookup.plAppendixDeclaredTaxBySplitBasis = mapDeclaredTaxBySplitBasis(dto);
+            } catch (Exception ex) {
+                issues.add("增值税账面金额缺少PL附表2320 builder产物，主营业务收入税目按空处理");
+            }
+        }
+        return lookup;
+    }
+
+    private BigDecimal sumBsAppendixVatCumulativeBalance(List<BsAppendixUploadDTO> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (BsAppendixUploadDTO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String shortText = normalizeText(row.getShortText());
+            String account = normalizeText(row.getGlAccount());
+            String carrier = shortText + "|" + account;
+            if (!carrier.contains(BS_APPENDIX_TAX_PAYABLE_VAT_PREFIX)) {
+                continue;
+            }
+            total = total.add(parseLooseNumber(row.getCumulativeBalance()));
+        }
+        return total;
+    }
+
+    private Map<String, BigDecimal> mapDeclaredTaxBySplitBasis(PlAppendix23202355DTO dto) {
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        if (dto == null || dto.getDeclarationSplitList() == null) {
+            return result;
+        }
+        for (PlAppendix23202355DTO.DeclarationSplitItem row : dto.getDeclarationSplitList()) {
+            if (row == null) {
+                continue;
+            }
+            String splitBasis = normalizeText(row.getSplitBasis());
+            if (splitBasis.isBlank()) {
+                continue;
+            }
+            result.merge(splitBasis, zeroIfNull(row.getDeclaredTaxAmount()), BigDecimal::add);
+        }
+        return result;
+    }
+
+    private BigDecimal parseLooseNumber(String raw) {
+        String text = normalizeText(raw);
+        if (text.isBlank()) {
+            return BigDecimal.ZERO;
+        }
+        String normalized = text.replace(",", "");
+        if (normalized.startsWith("(") && normalized.endsWith(")")) {
+            normalized = "-" + normalized.substring(1, normalized.length() - 1);
+        }
+        try {
+            return new BigDecimal(normalized);
+        } catch (Exception ex) {
+            return BigDecimal.ZERO;
+        }
+    }
+
     private Map<String, BigDecimal> resolveBookAmountByAccount(LedgerBuildContext ctx) {
         Map<String, BigDecimal> result = new LinkedHashMap<>();
         if (ctx.hasParsed(FileCategoryEnum.DL_INPUT)) {
@@ -658,6 +850,11 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         return normalizeText(taxType).contains("增值税");
     }
 
+    private boolean isCompany2320Or2355(String companyCode) {
+        String code = normalizeText(companyCode);
+        return "2320".equals(code) || "2355".equals(code);
+    }
+
     private boolean isSubtotalLine(String taxType, String taxItem) {
         return normalizeText(taxType).contains("合计") || normalizeText(taxItem).contains("合计");
     }
@@ -711,6 +908,14 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
             this.rows = rows;
             this.vatInputCertAmount = vatInputCertAmount;
         }
+    }
+
+    private static class VatBookLookup {
+        private boolean rjjcCompany;
+        private BigDecimal dlOutputDocumentAmountSum = BigDecimal.ZERO;
+        private BigDecimal dlInputDocumentAmountSum = BigDecimal.ZERO;
+        private BigDecimal bsAppendixVatCumulativeBalance = BigDecimal.ZERO;
+        private Map<String, BigDecimal> plAppendixDeclaredTaxBySplitBasis = new LinkedHashMap<>();
     }
 
     private static class SeqOrderKey implements Comparable<SeqOrderKey> {
