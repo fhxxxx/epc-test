@@ -17,9 +17,15 @@ import org.springframework.util.StringUtils;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class VatChangeSheetParser implements SheetParser<List<VatChangeRowDTO>> {
+    private static final int BLANK_ROW_BREAK_THRESHOLD = 5;
+    private static final Pattern CN_PAREN_PATTERN = Pattern.compile("（([^）]+)）");
+    private static final Pattern EN_PAREN_PATTERN = Pattern.compile("\\(([^)]+)\\)");
+
     @Override
     public FileCategoryEnum category() {
         return FileCategoryEnum.VAT_CHANGE;
@@ -46,7 +52,7 @@ public class VatChangeSheetParser implements SheetParser<List<VatChangeRowDTO>> 
 
             int headerRow = findHeaderRow(cells, maxRow, maxCol);
             if (headerRow < 0) {
-                result.addIssue("INVALID_WORKBOOK: 增值税变动表 未识别到表头");
+                result.addIssue("INVALID_WORKBOOK: 增值税变动表主表金额表头缺失（需至少识别合计+两列金额列）");
                 return result;
             }
 
@@ -58,24 +64,53 @@ public class VatChangeSheetParser implements SheetParser<List<VatChangeRowDTO>> 
             int prevInvoicedCol = findCol(cells, headerRow, maxCol, "以前月度开票金额");
             int totalCol = findCol(cells, headerRow, maxCol, "合计");
 
-            if (baseItemCol < 0 || totalCol < 0) {
-                result.addIssue("INVALID_WORKBOOK: 增值税变动表表头缺失(基础条目/合计)");
+            if (itemNameCol < 0) {
+                if (unbilledCol > 0) {
+                    itemNameCol = unbilledCol - 1;
+                } else if (totalCol >= 3) {
+                    itemNameCol = totalCol - 3;
+                }
+            }
+            if (totalCol < 0) {
+                result.addIssue("INVALID_WORKBOOK: 增值税变动表主表金额表头缺失（合计）");
                 return result;
             }
 
+            int blankRows = 0;
             for (int row = headerRow + 1; row <= maxRow; row++) {
-                String baseItem = normalize(text(cells, row, baseItemCol));
-                if (!StringUtils.hasText(baseItem)) {
+                String itemName = getIfValid(cells, row, itemNameCol);
+                String baseItemRaw = getIfValid(cells, row, baseItemCol);
+                String splitBasisRaw = getIfValid(cells, row, splitBasisCol);
+                java.math.BigDecimal unbilled = parseIfValid(cells, row, unbilledCol);
+                java.math.BigDecimal currentInvoiced = parseIfValid(cells, row, currentInvoicedCol);
+                java.math.BigDecimal prevInvoiced = parseIfValid(cells, row, prevInvoicedCol);
+                java.math.BigDecimal total = parseIfValid(cells, row, totalCol);
+
+                boolean hasAmount = unbilled != null || currentInvoiced != null || prevInvoiced != null || total != null;
+                boolean hasItemName = StringUtils.hasText(itemName);
+                if (!hasItemName && !hasAmount) {
+                    blankRows++;
+                    if (blankRows >= BLANK_ROW_BREAK_THRESHOLD) {
+                        break;
+                    }
                     continue;
                 }
+                blankRows = 0;
+
+                // 真实台账按“条目列”驱动解析：条目为空则跳过（即使金额列有噪声）
+                if (!hasItemName) {
+                    continue;
+                }
+
                 VatChangeRowDTO dto = new VatChangeRowDTO();
-                dto.setBaseItem(baseItem);
-                dto.setSplitBasis(getIfValid(cells, row, splitBasisCol));
-                dto.setItemName(getIfValid(cells, row, itemNameCol));
-                dto.setUnbilledAmount(parseIfValid(cells, row, unbilledCol));
-                dto.setCurrentMonthInvoicedAmount(parseIfValid(cells, row, currentInvoicedCol));
-                dto.setPreviousMonthInvoicedAmount(parseIfValid(cells, row, prevInvoicedCol));
-                dto.setTotalAmount(parseIfValid(cells, row, totalCol));
+                String normalizedItemName = normalize(itemName);
+                dto.setItemName(StringUtils.hasText(normalizedItemName) ? normalizedItemName : normalize(baseItemRaw));
+                dto.setBaseItem(StringUtils.hasText(baseItemRaw) ? normalize(baseItemRaw) : deriveBaseItem(normalizedItemName));
+                dto.setSplitBasis(StringUtils.hasText(splitBasisRaw) ? normalize(splitBasisRaw) : extractSplitBasis(normalizedItemName));
+                dto.setUnbilledAmount(unbilled);
+                dto.setCurrentMonthInvoicedAmount(currentInvoiced);
+                dto.setPreviousMonthInvoicedAmount(prevInvoiced);
+                dto.setTotalAmount(total);
                 result.getData().add(dto);
             }
             return result;
@@ -87,7 +122,21 @@ public class VatChangeSheetParser implements SheetParser<List<VatChangeRowDTO>> 
 
     private int findHeaderRow(Cells cells, int maxRow, int maxCol) {
         for (int row = 0; row <= maxRow; row++) {
-            if (findCol(cells, row, maxCol, "基础条目") >= 0 && findCol(cells, row, maxCol, "合计") >= 0) {
+            int totalCol = findCol(cells, row, maxCol, "合计");
+            if (totalCol < 0) {
+                continue;
+            }
+            int hit = 0;
+            if (findCol(cells, row, maxCol, "未开票金额") >= 0) {
+                hit++;
+            }
+            if (findCol(cells, row, maxCol, "当月开票金额") >= 0) {
+                hit++;
+            }
+            if (findCol(cells, row, maxCol, "以前月度开票金额") >= 0) {
+                hit++;
+            }
+            if (hit >= 2) {
                 return row;
             }
         }
@@ -133,5 +182,34 @@ public class VatChangeSheetParser implements SheetParser<List<VatChangeRowDTO>> 
     private String normalize(String text) {
         return text == null ? "" : text.replace("\u00A0", " ").trim();
     }
-}
 
+    private String deriveBaseItem(String itemName) {
+        if (!StringUtils.hasText(itemName)) {
+            return null;
+        }
+        String text = normalize(itemName);
+        text = text.replaceAll("（[^）]*）", "");
+        text = text.replaceAll("\\([^)]*\\)", "");
+        text = normalize(text);
+        return StringUtils.hasText(text) ? text : null;
+    }
+
+    private String extractSplitBasis(String itemName) {
+        if (!StringUtils.hasText(itemName)) {
+            return null;
+        }
+        String text = normalize(itemName);
+        Matcher cn = CN_PAREN_PATTERN.matcher(text);
+        if (cn.find()) {
+            String v = normalize(cn.group(1));
+            return StringUtils.hasText(v) ? v : null;
+        }
+        Matcher en = EN_PAREN_PATTERN.matcher(text);
+        if (en.find()) {
+            String v = normalize(en.group(1));
+            return StringUtils.hasText(v) ? v : null;
+        }
+        return null;
+    }
+
+}

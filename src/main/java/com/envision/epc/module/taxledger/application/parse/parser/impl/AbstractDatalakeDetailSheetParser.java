@@ -64,4 +64,12 @@ public abstract class AbstractDatalakeDetailSheetParser<T> implements SheetParse
         }
         return account.trim();
     }
+
+    protected boolean accountContains(String accountText, String targetAccountCode) {
+        if (targetAccountCode == null || targetAccountCode.isBlank()) {
+            return false;
+        }
+        String normalized = normalizedAccount(accountText);
+        return !normalized.isEmpty() && normalized.contains(targetAccountCode);
+    }
 }

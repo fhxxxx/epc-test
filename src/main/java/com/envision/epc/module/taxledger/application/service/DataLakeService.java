@@ -99,10 +99,25 @@ public class DataLakeService {
             grouped.put(FileCategoryEnum.DL_INPUT, new ArrayList<>());
             grouped.put(FileCategoryEnum.DL_INCOME_TAX, new ArrayList<>());
             grouped.put(FileCategoryEnum.DL_OTHER, new ArrayList<>());
+            int droppedCount = 0;
 
             for (DatalakeDTO dto : documents) {
-                grouped.get(resolveCategory(dto.getAccount())).add(dto);
+                FileCategoryEnum category = resolveCategory(dto.getAccount());
+                if (category == null) {
+                    droppedCount++;
+                    continue;
+                }
+                grouped.get(category).add(dto);
             }
+            log.info("datalake split summary, companyCode={}, totalRows={}, income={}, output={}, input={}, incomeTax={}, other={}, dropped={}",
+                    companyCode,
+                    documents.size(),
+                    grouped.get(FileCategoryEnum.DL_INCOME).size(),
+                    grouped.get(FileCategoryEnum.DL_OUTPUT).size(),
+                    grouped.get(FileCategoryEnum.DL_INPUT).size(),
+                    grouped.get(FileCategoryEnum.DL_INCOME_TAX).size(),
+                    grouped.get(FileCategoryEnum.DL_OTHER).size(),
+                    droppedCount);
 
             List<FileRecord> records = new ArrayList<>();
             for (Map.Entry<FileCategoryEnum, List<DatalakeDTO>> entry : grouped.entrySet()) {
@@ -219,12 +234,19 @@ public class DataLakeService {
             if (row == null) {
                 continue;
             }
-            String account = normalizeAccount(row.getAccount());
-            if (!ACCOUNT_INTEREST.equals(account) && !ACCOUNT_OTHER_INCOME.equals(account)) {
+            boolean matchedInterest = accountContains(row.getAccount(), ACCOUNT_INTEREST);
+            boolean matchedOtherIncome = accountContains(row.getAccount(), ACCOUNT_OTHER_INCOME);
+            if (!matchedInterest && !matchedOtherIncome) {
                 continue;
             }
-            dto.getDocumentAmountSumByAccount().compute(account, (k, v) -> safe(v).add(parseAmount(row.getDocumentAmount())));
-            dto.getLocalAmountSumByAccount().compute(account, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
+            if (matchedInterest) {
+                dto.getDocumentAmountSumByAccount().compute(ACCOUNT_INTEREST, (k, v) -> safe(v).add(parseAmount(row.getDocumentAmount())));
+                dto.getLocalAmountSumByAccount().compute(ACCOUNT_INTEREST, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
+            }
+            if (matchedOtherIncome) {
+                dto.getDocumentAmountSumByAccount().compute(ACCOUNT_OTHER_INCOME, (k, v) -> safe(v).add(parseAmount(row.getDocumentAmount())));
+                dto.getLocalAmountSumByAccount().compute(ACCOUNT_OTHER_INCOME, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
+            }
         }
         return dto;
     }
@@ -237,11 +259,10 @@ public class DataLakeService {
             if (row == null) {
                 continue;
             }
-            String account = normalizeAccount(row.getAccount());
-            if (!ACCOUNT_INPUT_TRANSFER_OUT.equals(account)) {
+            if (!accountContains(row.getAccount(), ACCOUNT_INPUT_TRANSFER_OUT)) {
                 continue;
             }
-            dto.getLocalAmountSumByAccount().compute(account, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
+            dto.getLocalAmountSumByAccount().compute(ACCOUNT_INPUT_TRANSFER_OUT, (k, v) -> safe(v).add(parseAmount(row.getLocalAmount())));
         }
         return dto;
     }
@@ -265,11 +286,19 @@ public class DataLakeService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    private String normalizeAccount(String account) {
+    private static String normalizeAccount(String account) {
         if (account == null) {
             return "";
         }
         return account.trim();
+    }
+
+    private boolean accountContains(String accountText, String targetAccountCode) {
+        if (!StringUtils.hasText(targetAccountCode)) {
+            return false;
+        }
+        String normalized = normalizeAccount(accountText);
+        return StringUtils.hasText(normalized) && normalized.contains(targetAccountCode);
     }
 
     private static List<String> normalizeCompanyCodes(List<String> companyCodeList) {
@@ -289,22 +318,29 @@ public class DataLakeService {
     }
 
     private static FileCategoryEnum resolveCategory(String account) {
-        if (account == null) {
-            return FileCategoryEnum.DL_OTHER;
-        }
-        if (account.startsWith("222101") || account.startsWith("222102")) {
-            return FileCategoryEnum.DL_INPUT;
-        }
-        if (account.startsWith("6")) {
-            return FileCategoryEnum.DL_INCOME;
-        }
-        if (account.startsWith("2221")) {
+        String normalized = normalizeAccount(account);
+        if (matchesAccountCode(normalized, "2221010200")) {
             return FileCategoryEnum.DL_OUTPUT;
         }
-        if (account.startsWith("25")) {
+        if (matchesAccountCode(normalized, "2221010100") || matchesAccountCode(normalized, "2221010400")) {
+            return FileCategoryEnum.DL_INPUT;
+        }
+        if (matchesAccountCode(normalized, "2221050000")) {
             return FileCategoryEnum.DL_INCOME_TAX;
         }
-        return FileCategoryEnum.DL_OTHER;
+        if (normalized.startsWith("6001")) {
+            return FileCategoryEnum.DL_INCOME;
+        }
+        if (matchesAccountCode(normalized, "6603020011") || matchesAccountCode(normalized, "6702000010")) {
+            return FileCategoryEnum.DL_OTHER;
+        }
+        return null;
+    }
+
+    private static boolean matchesAccountCode(String normalizedAccount, String accountCode) {
+        return StringUtils.hasText(normalizedAccount)
+                && StringUtils.hasText(accountCode)
+                && normalizedAccount.startsWith(accountCode);
     }
 
     private static String toSheetName(FileCategoryEnum category) {

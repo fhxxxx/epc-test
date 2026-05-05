@@ -34,11 +34,10 @@ public class DataLakeInputSheetParser extends AbstractDatalakeDetailSheetParser<
             if (row == null) {
                 continue;
             }
-            String account = normalizedAccount(row.getAccount());
-            if (!ACCOUNT_INPUT_TRANSFER_OUT.equals(account)) {
+            if (!accountContains(row.getAccount(), ACCOUNT_INPUT_TRANSFER_OUT)) {
                 continue;
             }
-            dto.getLocalAmountSumByAccount().compute(account, (k, v) -> (v == null ? BigDecimal.ZERO : v)
+            dto.getLocalAmountSumByAccount().compute(ACCOUNT_INPUT_TRANSFER_OUT, (k, v) -> (v == null ? BigDecimal.ZERO : v)
                     .add(amount(row.getLocalAmount())));
         }
         return dto;

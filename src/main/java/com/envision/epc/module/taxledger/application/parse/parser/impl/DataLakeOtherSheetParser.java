@@ -38,14 +38,23 @@ public class DataLakeOtherSheetParser extends AbstractDatalakeDetailSheetParser<
             if (row == null) {
                 continue;
             }
-            String account = normalizedAccount(row.getAccount());
-            if (!ACCOUNT_INTEREST.equals(account) && !ACCOUNT_OTHER_INCOME.equals(account)) {
+            boolean matchedInterest = accountContains(row.getAccount(), ACCOUNT_INTEREST);
+            boolean matchedOtherIncome = accountContains(row.getAccount(), ACCOUNT_OTHER_INCOME);
+            if (!matchedInterest && !matchedOtherIncome) {
                 continue;
             }
-            dto.getDocumentAmountSumByAccount().compute(account, (k, v) -> (v == null ? BigDecimal.ZERO : v)
-                    .add(amount(row.getDocumentAmount())));
-            dto.getLocalAmountSumByAccount().compute(account, (k, v) -> (v == null ? BigDecimal.ZERO : v)
-                    .add(amount(row.getLocalAmount())));
+            if (matchedInterest) {
+                dto.getDocumentAmountSumByAccount().compute(ACCOUNT_INTEREST, (k, v) -> (v == null ? BigDecimal.ZERO : v)
+                        .add(amount(row.getDocumentAmount())));
+                dto.getLocalAmountSumByAccount().compute(ACCOUNT_INTEREST, (k, v) -> (v == null ? BigDecimal.ZERO : v)
+                        .add(amount(row.getLocalAmount())));
+            }
+            if (matchedOtherIncome) {
+                dto.getDocumentAmountSumByAccount().compute(ACCOUNT_OTHER_INCOME, (k, v) -> (v == null ? BigDecimal.ZERO : v)
+                        .add(amount(row.getDocumentAmount())));
+                dto.getLocalAmountSumByAccount().compute(ACCOUNT_OTHER_INCOME, (k, v) -> (v == null ? BigDecimal.ZERO : v)
+                        .add(amount(row.getLocalAmount())));
+            }
         }
         return dto;
     }
