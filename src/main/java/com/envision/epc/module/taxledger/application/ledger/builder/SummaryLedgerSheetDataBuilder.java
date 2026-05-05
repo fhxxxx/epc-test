@@ -5,6 +5,7 @@ import com.envision.epc.module.taxledger.application.dto.DlInputParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.DlOtherParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.SummarySheetDTO;
 import com.envision.epc.module.taxledger.application.dto.StampDutySummaryRowDTO;
+import com.envision.epc.module.taxledger.application.dto.VatInputCertParsedDTO;
 import com.envision.epc.module.taxledger.application.dto.VatChangeRowDTO;
 import com.envision.epc.module.taxledger.application.ledger.LedgerBuildContext;
 import com.envision.epc.module.taxledger.application.ledger.LedgerSheetCode;
@@ -44,6 +45,11 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
     private static final String VAT_SUBTOTAL_FALLBACK_ISSUE = "增值税合计未命中VAT_CHANGE条目=应交增值税，按0处理";
     private static final String VAT_MAIN_REVENUE_PREFIX = "销项税额-主营业务收入";
     private static final String VAT_CHANGE_MAIN_REVENUE_PREFIX = "当月利润表主营业务收入-";
+    private static final String VAT_INPUT_TAX_ITEM = "增值税进项税额";
+    private static final String VAT_ENDING_INPUT_CARRY = "期末进项留抵金额";
+    private static final String VAT_BEGINNING_INPUT_CARRY = "期初进项留抵金额";
+    private static final String VAT_CHANGE_CERTIFIED_INPUT_TAX = "增值税已认证进项税";
+    private static final String VAT_CHANGE_INPUT_TRANSFER_OUT = "进项转出";
 
     @Override
     public LedgerSheetCode support() {
@@ -94,12 +100,15 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
                 continue;
             }
             BigDecimal actualOverride = null;
-            if (isVatTaxType(taxType) && isSubtotalLine(taxType, taxItem)) {
-                if (!vatSubtotalResolved) {
-                    vatSubtotalDeclared = resolveVatSubtotalDeclaredAmount(ctx, issues);
-                    vatSubtotalResolved = true;
+            if (isVatTaxType(taxType)) {
+                actualOverride = resolveVatInputTaxDeclaredAmount(taxItem, vatBaseLookup);
+                if (actualOverride == null && isSubtotalLine(taxType, taxItem)) {
+                    if (!vatSubtotalResolved) {
+                        vatSubtotalDeclared = resolveVatSubtotalDeclaredAmount(ctx, issues);
+                        vatSubtotalResolved = true;
+                    }
+                    actualOverride = vatSubtotalDeclared;
                 }
-                actualOverride = vatSubtotalDeclared;
             }
             SummarySheetDTO.CommonTaxItem row = buildCommonRow(
                     config, taxType, taxItem, rowSeqNo, vatBaseLookup, bookAmountByAccount, actualOverride, issues);
@@ -188,10 +197,11 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         row.setAccountCode(safeText(config.getAccountSubject()));
 
         BigDecimal taxBase = resolveTaxBaseAmount(config, taxType, taxItem, vatBaseLookup, issues);
+        BigDecimal taxBaseForCalc = zeroIfNull(taxBase);
         BigDecimal levyRatio = normalizeRatio(config.getCollectionRatio());
         BigDecimal taxRate = zeroIfNull(config.getTaxRate());
         BigDecimal actual = actualOverride == null
-                ? taxBase.multiply(levyRatio).multiply(taxRate)
+                ? taxBaseForCalc.multiply(levyRatio).multiply(taxRate)
                 : zeroIfNull(actualOverride);
         BigDecimal book = zeroIfNull(bookAmountByAccount.get(normalizeText(config.getAccountSubject())));
         BigDecimal variance = actual.subtract(book);
@@ -214,11 +224,51 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
         if (!isVatTaxType(taxType)) {
             return BigDecimal.ZERO;
         }
+        if (isVatCarryAmountEmptyItem(taxItem)) {
+            return null;
+        }
+        BigDecimal vatInputCertAmount = resolveVatInputCertAmount(taxItem, vatBaseLookup);
+        if (vatInputCertAmount != null) {
+            return vatInputCertAmount;
+        }
         BigDecimal mainRevenueAmount = resolveVatMainRevenueTaxBaseAmount(config, taxItem, vatBaseLookup, issues);
         if (mainRevenueAmount != null) {
             return mainRevenueAmount;
         }
         return zeroIfNull(vatBaseLookup.amountByTaxItem.get(normalizeText(taxItem)));
+    }
+
+    private boolean isVatCarryAmountEmptyItem(String taxItem) {
+        String item = normalizeText(taxItem);
+        return VAT_ENDING_INPUT_CARRY.equals(item) || VAT_BEGINNING_INPUT_CARRY.equals(item);
+    }
+
+    private BigDecimal resolveVatInputCertAmount(String taxItem, VatBaseLookup vatBaseLookup) {
+        if (!VAT_INPUT_TAX_ITEM.equals(normalizeText(taxItem))) {
+            return null;
+        }
+        return zeroIfNull(vatBaseLookup.vatInputCertAmount);
+    }
+
+    private BigDecimal resolveVatInputTaxDeclaredAmount(String taxItem, VatBaseLookup vatBaseLookup) {
+        if (!VAT_INPUT_TAX_ITEM.equals(normalizeText(taxItem))) {
+            return null;
+        }
+        BigDecimal declared = BigDecimal.ZERO;
+        for (VatChangeRowDTO row : vatBaseLookup.rows) {
+            if (row == null) {
+                continue;
+            }
+            String baseItem = normalizeText(row.getBaseItem());
+            String itemName = normalizeText(row.getItemName());
+            if (VAT_CHANGE_CERTIFIED_INPUT_TAX.equals(baseItem)
+                    || VAT_CHANGE_CERTIFIED_INPUT_TAX.equals(itemName)
+                    || VAT_CHANGE_INPUT_TRANSFER_OUT.equals(baseItem)
+                    || VAT_CHANGE_INPUT_TRANSFER_OUT.equals(itemName)) {
+                declared = declared.add(zeroIfNull(row.getTotalAmount()));
+            }
+        }
+        return declared;
     }
 
     private BigDecimal resolveVatMainRevenueTaxBaseAmount(TaxCategoryConfig config,
@@ -422,10 +472,15 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
     private VatBaseLookup resolveVatBaseLookup(LedgerBuildContext ctx) {
         Map<String, BigDecimal> result = new LinkedHashMap<>();
         List<VatChangeRowDTO> payload = List.of();
+        BigDecimal vatInputCertAmount = BigDecimal.ZERO;
+        if (ctx.hasParsed(FileCategoryEnum.VAT_INPUT_CERT)) {
+            VatInputCertParsedDTO vatInputCert = ctx.getParsedObject(FileCategoryEnum.VAT_INPUT_CERT, VatInputCertParsedDTO.class);
+            vatInputCertAmount = zeroIfNull(vatInputCert == null ? null : vatInputCert.getAmountSum());
+        }
         VatChangeLedgerSheetData vatChangeData =
                 ctx.requireBuilt(LedgerSheetCode.VAT_CHANGE, VatChangeLedgerSheetData.class, support());
         if (vatChangeData.getPayload() == null) {
-            return new VatBaseLookup(result, payload);
+            return new VatBaseLookup(result, payload, vatInputCertAmount);
         }
         List<VatChangeRowDTO> rows = vatChangeData.getPayload();
         payload = rows;
@@ -437,7 +492,7 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
             mergeAmount(result, normalizeText(row.getBaseItem()), amount);
             mergeAmount(result, normalizeText(row.getItemName()), amount);
         }
-        return new VatBaseLookup(result, payload);
+        return new VatBaseLookup(result, payload, vatInputCertAmount);
     }
 
     private Map<String, BigDecimal> resolveBookAmountByAccount(LedgerBuildContext ctx) {
@@ -649,10 +704,12 @@ public class SummaryLedgerSheetDataBuilder implements LedgerSheetDataBuilder<Sum
     private static class VatBaseLookup {
         private final Map<String, BigDecimal> amountByTaxItem;
         private final List<VatChangeRowDTO> rows;
+        private final BigDecimal vatInputCertAmount;
 
-        private VatBaseLookup(Map<String, BigDecimal> amountByTaxItem, List<VatChangeRowDTO> rows) {
+        private VatBaseLookup(Map<String, BigDecimal> amountByTaxItem, List<VatChangeRowDTO> rows, BigDecimal vatInputCertAmount) {
             this.amountByTaxItem = amountByTaxItem;
             this.rows = rows;
+            this.vatInputCertAmount = vatInputCertAmount;
         }
     }
 

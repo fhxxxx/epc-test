@@ -578,7 +578,7 @@ public class SummaryTemplateRenderService {
                                            int rowIndex,
                                            SummarySheetDTO.CommonTaxItem row,
                                            VatChangeTotalRefIndex vatRefIndex) {
-        if (row == null || vatRefIndex == null || vatRefIndex.empty()) {
+        if (row == null || vatRefIndex == null || vatRefIndex.isEmpty()) {
             return;
         }
         if (!normalizeText(row.getTaxType()).contains("增值税")) {
@@ -909,16 +909,16 @@ public class SummaryTemplateRenderService {
 
     private VatChangeTotalRefIndex buildVatChangeTotalRefIndex(Workbook workbook) {
         if (workbook == null) {
-            return VatChangeTotalRefIndex.empty();
+            return VatChangeTotalRefIndex.createEmpty();
         }
         Worksheet vatSheet = workbook.getWorksheets().get(VAT_CHANGE_SHEET_NAME);
         if (vatSheet == null) {
-            return VatChangeTotalRefIndex.empty();
+            return VatChangeTotalRefIndex.createEmpty();
         }
         Cells cells = vatSheet.getCells();
         HeaderLocateResult header = locateVatHeader(cells);
         if (header == null) {
-            return VatChangeTotalRefIndex.empty();
+            return VatChangeTotalRefIndex.createEmpty();
         }
         String escapedSheetName = escapeSheetName(vatSheet.getName());
         VatChangeTotalRefIndex index = new VatChangeTotalRefIndex();
@@ -1226,7 +1226,7 @@ public class SummaryTemplateRenderService {
     private static class VatChangeTotalRefIndex {
         private final Map<String, String> totalRefByItem = new LinkedHashMap<>();
 
-        private static VatChangeTotalRefIndex empty() {
+        private static VatChangeTotalRefIndex createEmpty() {
             return new VatChangeTotalRefIndex();
         }
 
@@ -1241,7 +1241,7 @@ public class SummaryTemplateRenderService {
             return totalRefByItem.get(compact(itemName));
         }
 
-        private boolean empty() {
+        private boolean isEmpty() {
             return totalRefByItem.isEmpty();
         }
 
